@@ -1,0 +1,27 @@
+[engine]
+id = "claude-code"
+name = "Claude Code"
+description = "Anthropic Claude Code CLI agent"
+
+[command]
+binary = "claude"
+prompt_flag = "-p"
+static_args = ["--verbose"]
+
+[command.map]
+model = "--model"
+output_format = "--output-format"
+max_turns = "--max-turns"
+max_budget_usd = "--max-budget-usd"
+system_prompt = "--system-prompt"
+allowed_tools = "--allowedTools"
+
+[command.list_join]
+allowed_tools = ","
+
+[output]
+mode = "stdout"
+format = "json"
+
+[env]
+auth = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]

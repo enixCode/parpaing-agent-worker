@@ -1,0 +1,18 @@
+# VPS deployment with Traefik reverse proxy
+# Copy to docker-compose.override.yml and replace YOUR_DOMAIN
+services:
+  lb:
+    container_name: parpaing-agent-worker
+    networks:
+      - traefik-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agent-worker.rule=Host(`YOUR_DOMAIN`)"
+      - "traefik.http.routers.agent-worker.entrypoints=websecure"
+      - "traefik.http.routers.agent-worker.tls.certresolver=myresolver"
+      - "traefik.http.routers.agent-worker.middlewares=secure-chain@file"
+      - "traefik.http.services.agent-worker.loadbalancer.server.port=80"
+
+networks:
+  traefik-network:
+    external: true

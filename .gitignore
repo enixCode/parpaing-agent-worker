@@ -1,0 +1,9 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+.vscode/
+.claude/
+docker-compose.override.yml

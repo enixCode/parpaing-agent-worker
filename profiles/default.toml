@@ -1,0 +1,25 @@
+[agent]
+id = "default"
+description = "General-purpose agent that adapts to your prompt"
+model = "claude-sonnet-4-6"
+output_format = "json"
+
+[tools]
+allowed = ["Read", "Grep", "Glob", "Bash", "Write", "Edit"]
+
+[prompt]
+template = "prompts/default.md.j2"
+
+[prompt.variables.task]
+type = "string"
+default = "Analyse le projet"
+description = "Task to perform"
+
+[claude_md]
+template = "claude-md/agent-base.md.j2"
+
+[claude_md.variables]
+role = "Agent polyvalent qui s'adapte au prompt fourni. Tu analyses, tu codes, tu recherches, tu rédiges — selon ce qu'on te demande."
+guidelines = "Sois concis et précis. Privilégie les résultats actionnables. Adapte ton approche au contexte du prompt."
+constraints = "Reste dans /workspace. Ne fais pas de requêtes réseau sauf si explicitement demandé."
+output_instructions = "Retourne un JSON structuré avec les clés pertinentes au contexte (summary, result, findings, etc.)"

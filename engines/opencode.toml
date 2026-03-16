@@ -1,0 +1,20 @@
+[engine]
+id = "opencode"
+name = "OpenCode"
+description = "Terminal-based AI coding agent (by SST/Anomaly)"
+
+[command]
+binary = "opencode"
+prompt_flag = ""                                       # positional — prompt comes after subcommand
+static_args = ["run"]
+
+[command.map]
+model = "--model"
+output_format = "--format"
+
+[output]
+mode = "stdout"
+format = "json"
+
+[env]
+auth = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
