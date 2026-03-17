@@ -1,0 +1,30 @@
+site_name: Parpaing
+site_description: Run any AI coding agent in isolated Docker containers
+site_url: https://enixcode.github.io/parpaing-agent-worker/
+repo_url: https://github.com/enixCode/parpaing-agent-worker
+repo_name: enixCode/parpaing-agent-worker
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep orange
+    accent: orange
+  features:
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - API Reference: api.md
+  - Request Format: request.md
+  - Profiles: profiles.md
+  - Templates: templates.md
+  - Configuration: config.md
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - codehilite
