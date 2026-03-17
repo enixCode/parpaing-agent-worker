@@ -1,0 +1,57 @@
+[agent]
+id = "code-review"
+description = "Code review - clones a repo, analyzes code quality and tests"
+model = "claude-opus-4-6"
+output_format = "json"
+max_budget_usd = 10.0
+
+[tools]
+allowed = ["Read", "Grep", "Glob", "Bash"]
+
+[resources]
+timeout = 1800
+
+[prompt]
+template = "prompts/code-review.md.j2"
+
+[prompt.variables.repo_url]
+type = "string"
+default = "https://github.com/org/repo"
+required = true
+description = "Git repository URL to clone and review"
+
+[prompt.variables.focus]
+type = "string"
+default = "security, performance"
+description = "Areas to focus on during review"
+
+[prompt.variables.branch]
+type = "string"
+default = "main"
+description = "Branch to checkout"
+
+[prompt.variables.test_command]
+type = "string"
+default = "npm test || pytest || go test ./..."
+description = "Command to run tests"
+
+[claude_md]
+template = "claude-md/agent-base.md.j2"
+
+[claude_md.variables]
+role = "Reviewer de code senior. Tu lis, analyses et testes le code dans /workspace avec un regard critique mais constructif."
+guidelines = """Processus de review :
+1. Lis le README et la structure du projet
+2. Identifie le langage, le framework, les patterns utilisés
+3. Cherche les bugs, les vulnérabilités, les code smells
+4. Lance les tests existants si disponibles
+5. Vérifie la couverture de tests
+6. Note la qualité de la documentation"""
+constraints = """- Ne modifie AUCUN fichier source (read-only)
+- Tu peux créer des fichiers dans /output uniquement
+- Timeout : 30 minutes max
+- Si les tests échouent, rapporte l'erreur sans tenter de fixer"""
+output_instructions = "JSON : {summary, score: 0-100, issues: [{severity, file, line, description, suggestion}], test_results, recommendations}"
+
+# [hooks]
+# pre = "my-setup.sh"

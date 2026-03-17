@@ -1,0 +1,22 @@
+Review du code dans /workspace.
+
+{% if repo_url %}
+Le repo a été cloné depuis : {{ repo_url }}
+{% endif %}
+
+{% if focus %}
+Focus : {{ focus }}
+{% endif %}
+
+Étapes :
+1. Comprendre l'architecture globale (structure, dépendances, patterns)
+2. Analyser la qualité du code (lisibilité, DRY, SOLID, KISS)
+3. Identifier les bugs potentiels et les vulnérabilités
+4. Vérifier les tests existants - lancer `{{ test_command | default("npm test || pytest || go test ./...") }}`
+5. Produire un rapport structuré
+
+{% if branch %}
+Branche à reviewer : {{ branch }}
+{% endif %}
+
+Le rapport doit inclure : résumé, score qualité /100, problèmes trouvés (severity, fichier, ligne), recommandations.

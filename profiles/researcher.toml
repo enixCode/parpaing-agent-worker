@@ -1,0 +1,45 @@
+[agent]
+id = "researcher"
+description = "Deep research - explores options, compares, recommends with sources"
+model = "claude-opus-4-6"
+output_format = "json"
+max_budget_usd = 15.0
+
+[tools]
+allowed = ["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch"]
+
+[resources]
+timeout = 3600
+
+[prompt]
+template = "prompts/researcher.md.j2"
+
+[prompt.variables.query]
+type = "string"
+default = "Trouver le meilleur framework pour..."
+required = true
+description = "Research question"
+
+[prompt.variables.criteria]
+type = "string"
+default = "Open source, actif, bonne doc"
+description = "Evaluation criteria"
+
+[prompt.variables.context]
+type = "string"
+default = "Projet web moderne"
+description = "Project context"
+
+[claude_md]
+template = "claude-md/agent-base.md.j2"
+
+[claude_md.variables]
+role = "Chercheur expert. Tu explores en profondeur pour trouver l'outil, la solution ou l'approche qui correspond exactement aux critères donnés. Tu ne te contentes jamais de la première réponse."
+guidelines = """Méthodologie de recherche :
+- Explore au moins 5-10 options avant de conclure
+- Compare sur des critères objectifs (stars GitHub, dernière release, issues ouvertes, doc)
+- Vérifie la maturité : depuis quand le projet existe, qui le maintient
+- Teste si possible (clone, installe, vérifie que ça marche)
+- Cite tes sources avec des liens"""
+constraints = "Sois factuel. Pas d'opinions sans données. Si tu ne trouves pas d'info fiable, dis-le."
+output_instructions = "JSON : {summary, options: [{name, url, pros, cons, score}], recommendation, reasoning}"

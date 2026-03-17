@@ -1,0 +1,19 @@
+Recherche approfondie : {{ query | default("Analyse le sujet fourni") }}
+
+{% if criteria %}
+Critères de sélection :
+{{ criteria }}
+{% endif %}
+
+Méthodologie :
+1. Comprendre le besoin exact et les critères
+2. Explorer toutes les options disponibles (outils, librairies, services, approches)
+3. Comparer selon les critères : maturité, communauté, documentation, prix, limites
+4. Recommander le top 3 avec justification détaillée
+
+{% if context %}
+Contexte additionnel :
+{{ context }}
+{% endif %}
+
+Produis un rapport structuré avec : résumé, options analysées, comparatif, recommandation finale.
