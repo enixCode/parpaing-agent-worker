@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banners/hero-banner.svg" alt="Parpaing" width="100%"/>
+  <img src="banners/hero-banner.svg" alt="Parpaing" width="100%"/>
 </p>
 
 <h1 align="center">Parpaing</h1>
@@ -29,7 +29,7 @@ Send a prompt, get structured results. Parpaing handles container orchestration,
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="Architecture" width="100%"/>
+  <img src="architecture.svg" alt="Architecture" width="100%"/>
 </p>
 
 ## Quick Start
@@ -45,7 +45,7 @@ open http://localhost:8420/ui
 ```
 
 <p align="center">
-  <img src="docs/assets/dashboard.png" alt="Dashboard" width="100%"/>
+  <img src="assets/dashboard.png" alt="Dashboard" width="100%"/>
 </p>
 
 ## Usage
@@ -108,7 +108,7 @@ Interactive docs available at [/docs](http://localhost:8420/docs) when running.
 Profiles are reusable agent configurations in TOML. They define the model, tools, prompt template, hooks, and resource limits.
 
 <p align="center">
-  <img src="docs/assets/profiles.svg" alt="Profile System" width="100%"/>
+  <img src="assets/profiles.svg" alt="Profile System" width="100%"/>
 </p>
 
 | Profile | Purpose |
@@ -236,4 +236,4 @@ TOWER_REPLICAS=3 docker compose up -d
 
 ## License
 
-Parpaing is licensed under the [GNU Affero General Public License v3.0](LICENSE). If you deploy a modified version as a network service, you must make the source code available to its users.
+Parpaing is licensed under the [GNU Affero General Public License v3.0](LICENSE).

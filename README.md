@@ -236,4 +236,4 @@ TOWER_REPLICAS=3 docker compose up -d
 
 ## License
 
-Parpaing is licensed under the [GNU Affero General Public License v3.0](LICENSE). If you deploy a modified version as a network service, you must make the source code available to its users.
+Parpaing is licensed under the [GNU Affero General Public License v3.0](LICENSE).
