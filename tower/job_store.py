@@ -184,8 +184,8 @@ class JobStore:
                 result = await conn.execute(
                     """DELETE FROM jobs
                        WHERE status IN ('completed', 'failed', 'cancelled')
-                       AND finished_at < now() - ($1 || ' hours')::interval""",
-                    str(self._ttl_hours),
+                       AND finished_at < now() - make_interval(hours => $1)""",
+                    self._ttl_hours,
                 )
                 ttl_removed = int(result.split()[-1]) if result else 0
 

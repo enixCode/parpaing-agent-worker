@@ -12,14 +12,15 @@ from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from .config import (
     VERSION, MAX_CONCURRENT_JOBS, JOB_TTL_HOURS, MAX_RETAINED_JOBS,
-    DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH, docker_client,
+    DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH,
+    docker_client,
 )
 from .job_store import JobStore, JobStatus
 from .job_runner import execute_job, recover_jobs, cleanup_loop
 from .models import JobCreateRequest, JobCreateResponse, JobResponse
 from .pool import ContainerPool
-from .engines import list_engines as _list_engines
-from .profiles import list_profiles as _list_profiles
+from .engines import list_engines as _list_engines, load_engine, is_engine_available
+from .profiles import list_profiles as _list_profiles, _load_profile
 
 
 logger = logging.getLogger("tower")
@@ -143,7 +144,7 @@ async def health():
         healthy = False
 
     try:
-        docker_client.ping()
+        docker_client().ping()
     except Exception:
         checks["docker"] = "unavailable"
         healthy = False
@@ -199,6 +200,14 @@ async def metrics():
 
 @app.post("/jobs", status_code=202)
 async def create_job(req: JobCreateRequest) -> JobCreateResponse:
+    engine = load_engine(req.engine)
+    if engine is None:
+        raise HTTPException(422, f"Engine not found: {req.engine}")
+    if not is_engine_available(engine):
+        raise HTTPException(422, f"Engine '{req.engine}' not available - set one of: {', '.join(engine.env_auth)}")
+    if req.profile != "default" and _load_profile(req.profile) is None:
+        raise HTTPException(422, f"Profile not found: {req.profile}")
+
     job_id = f"{req.agent_id}-{uuid.uuid4().hex[:12]}"
     await store.create(job_id, req, req.webhook_url)
     JOBS_TOTAL.labels(profile=req.profile).inc()

@@ -48,4 +48,11 @@ WEBHOOK_TIMEOUT = int(os.environ.get("WEBHOOK_TIMEOUT", "10"))  # seconds
 DB_POOL_MIN_SIZE = int(os.environ.get("DB_POOL_MIN_SIZE", "2"))
 DB_POOL_MAX_SIZE = int(os.environ.get("DB_POOL_MAX_SIZE", "10"))
 
-docker_client = docker.from_env()
+_docker_client = None
+
+def docker_client():
+    """Return (and cache) the Docker client. Lazy to avoid import-time crashes."""
+    global _docker_client
+    if _docker_client is None:
+        _docker_client = docker.from_env()
+    return _docker_client

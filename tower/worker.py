@@ -98,7 +98,10 @@ def _build_config_tar(config: JobConfig, dry_run: bool = False) -> bytes:
 async def inject_config(container, config: JobConfig, dry_run: bool = False):
     """Inject config files into a running container via put_archive."""
     tar_data = _build_config_tar(config, dry_run)
-    await asyncio.to_thread(container.put_archive, "/tmp", tar_data)
+    await asyncio.wait_for(
+        asyncio.to_thread(container.put_archive, "/tmp", tar_data),
+        timeout=60,
+    )
     logger.debug("Injected config into container %s", container.short_id)
 
 
@@ -134,7 +137,10 @@ def _extract_file_from_archive(stream) -> tuple[bytes, int]:
 async def extract_result(container) -> dict | None:
     """Extract result.json from a stopped container via get_archive."""
     try:
-        stream, _ = await asyncio.to_thread(container.get_archive, "/output/result.json")
+        stream, _ = await asyncio.wait_for(
+            asyncio.to_thread(container.get_archive, "/output/result.json"),
+            timeout=120,
+        )
         content, size = _extract_file_from_archive(stream)
         if size > MAX_RESULT_SIZE:
             return {"error": f"result.json too large ({size} bytes, max {MAX_RESULT_SIZE})"}
@@ -151,7 +157,10 @@ async def extract_result(container) -> dict | None:
 async def extract_stderr(container) -> str | None:
     """Extract stderr.log from a stopped container if present."""
     try:
-        stream, _ = await asyncio.to_thread(container.get_archive, "/output/stderr.log")
+        stream, _ = await asyncio.wait_for(
+            asyncio.to_thread(container.get_archive, "/output/stderr.log"),
+            timeout=120,
+        )
         content, size = _extract_file_from_archive(stream)
         if size > MAX_RESULT_SIZE:
             return None
@@ -165,4 +174,4 @@ async def extract_stderr(container) -> str | None:
 
 def get_container(container_id: str):
     """Get a Docker container by ID. Raises docker.errors.NotFound if gone."""
-    return docker_client.containers.get(container_id)
+    return docker_client().containers.get(container_id)

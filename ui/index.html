@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Parpaing Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23ff6b2c'/><rect x='2' y='3' width='12' height='10' rx='1' fill='%2317150f'/><rect x='18' y='3' width='12' height='10' rx='1' fill='%2317150f'/><rect x='8' y='17' width='16' height='12' rx='1' fill='%2317150f'/></svg>">
@@ -812,7 +813,7 @@ function renderJobs(jobs, total) {
     list.innerHTML = jobs.map(j => `
       <div class="job-row${j.job_id === selectedJobId ? ' selected' : ''}" data-id="${escapeHtml(j.job_id)}">
         <div class="job-id">${escapeHtml(j.job_id)}</div>
-        <div><span class="status-badge status-${j.status}">${j.status}</span></div>
+        <div><span class="status-badge status-${j.status.replace(/[^a-z0-9-]/gi, '')}">${j.status}</span></div>
         <div class="job-engine">${escapeHtml(j.engine || '-')}</div>
         <div class="job-engine">${escapeHtml(j.profile || '-')}</div>
         <div class="job-time">${relTime(j.created_at)}</div>
@@ -912,7 +913,12 @@ function renderMarkdown(md) {
   html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    if (/^https?:\/\//i.test(url)) {
+      return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+    }
+    return text;
+  });
   html = html.replace(/\n\n/g, '</p><p>');
   html = '<p>' + html + '</p>';
   html = html.replace(/<p>\s*<\/p>/g, '');
@@ -960,7 +966,7 @@ function renderDetail(job) {
 
   const statusEl = document.getElementById('detailStatus');
   statusEl.textContent = job.status;
-  statusEl.className = 'status-badge status-' + job.status;
+  statusEl.className = 'status-badge status-' + job.status.replace(/[^a-z0-9-]/gi, '');
 
   const cancelBtn = document.getElementById('detailCancel');
   cancelBtn.style.display = (job.status === 'pending' || job.status === 'running') ? 'inline-block' : 'none';

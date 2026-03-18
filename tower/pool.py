@@ -71,13 +71,9 @@ class ContainerPool:
                RETURNING container_id, network_id""",
         )
         if not row:
-            # Pool exhausted - create one on-demand
+            # Pool exhausted - create one on-demand, inserted directly as busy
             logger.warning("Pool exhausted, creating container on-demand")
-            container_id = await self._create_warm()
-            await self._pool.execute(
-                "UPDATE containers SET status = 'busy' WHERE container_id = $1",
-                container_id,
-            )
+            container_id = await self._create_warm(status="busy")
             return container_id, self._network_id
         return row["container_id"], row["network_id"]
 
@@ -124,9 +120,9 @@ class ContainerPool:
         rows = await self._pool.fetch(
             """DELETE FROM containers
                WHERE status = 'ready'
-               AND created_at < now() - ($1 || ' seconds')::interval
+               AND created_at < now() - make_interval(secs => $1)
                RETURNING container_id""",
-            str(POOL_MAX_IDLE),
+            POOL_MAX_IDLE,
         )
         for row in rows:
             await self._destroy_container(row["container_id"])
@@ -136,13 +132,13 @@ class ContainerPool:
     async def _cleanup_stale(self):
         """On startup: remove DB entries whose Docker container no longer exists,
         and remove orphaned Docker containers not tracked in the DB."""
-        # 1. DB → Docker: remove DB entries for missing containers
+        # 1. DB -> Docker: remove DB entries for missing containers
         rows = await self._pool.fetch("SELECT id, container_id FROM containers")
         tracked_ids = {row["container_id"] for row in rows}
         removed = 0
         for row in rows:
             try:
-                docker_client.containers.get(row["container_id"])
+                docker_client().containers.get(row["container_id"])
             except Exception:
                 await self._pool.execute("DELETE FROM containers WHERE id = $1", row["id"])
                 tracked_ids.discard(row["container_id"])
@@ -150,9 +146,9 @@ class ContainerPool:
         if removed:
             logger.info("Pool startup: cleaned %d stale DB entries", removed)
 
-        # 2. Docker → DB: remove orphaned agent-* containers not in DB
+        # 2. Docker -> DB: remove orphaned agent-* containers not in DB
         orphans = await asyncio.to_thread(
-            docker_client.containers.list,
+            docker_client().containers.list,
             all=True,
             filters={"name": "agent-", "status": ["created", "exited"]},
         )
@@ -173,12 +169,12 @@ class ContainerPool:
     def _ensure_network() -> str:
         """Create or find the shared worker network. Returns network ID."""
         try:
-            net = docker_client.networks.get(WORKER_NET)
+            net = docker_client().networks.get(WORKER_NET)
             logger.info("Using existing worker network: %s", WORKER_NET)
             return net.id
         except Exception:
             pass
-        net = docker_client.networks.create(
+        net = docker_client().networks.create(
             WORKER_NET,
             driver="bridge",
             internal=bool(PROXY_URL),
@@ -187,7 +183,7 @@ class ContainerPool:
         logger.info("Created worker network: %s (icc=false, internal=%s)", WORKER_NET, bool(PROXY_URL))
         return net.id
 
-    async def _create_warm(self) -> str:
+    async def _create_warm(self, status: str = "ready") -> str:
         """Create a warm container on the shared network, insert into DB. Returns container_id."""
         # Collect all auth env vars declared by all engines
         env = {}
@@ -227,24 +223,24 @@ class ContainerPool:
             )
 
         container = await asyncio.to_thread(
-            docker_client.containers.run, **run_kwargs,
+            docker_client().containers.run, **run_kwargs,
         )
 
         await self._pool.execute(
-            "INSERT INTO containers (container_id, network_id) VALUES ($1, $2)",
-            container.id, self._network_id,
+            "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
+            container.id, self._network_id, status,
         )
         return container.id
 
     async def _destroy_container(self, container_id: str):
         """Kill + remove a container. Tolerant to failures."""
         try:
-            c = docker_client.containers.get(container_id)
+            c = docker_client().containers.get(container_id)
             await asyncio.to_thread(c.kill)
         except Exception:
             pass
         try:
-            c = docker_client.containers.get(container_id)
+            c = docker_client().containers.get(container_id)
             await asyncio.to_thread(c.remove)
         except Exception:
             pass

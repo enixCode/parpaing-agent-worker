@@ -86,3 +86,123 @@ def test_cancel_nonexistent_job(client):
     assert r.status_code == 404
 
 
+# --- output_format / max_turns / max_budget boundaries ---
+
+def test_invalid_output_format(client):
+    """output_format not in (json, text, stream-json) should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "output_format": "xml",
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_turns_zero(client):
+    """max_turns=0 is below minimum and should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_turns": 0,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_turns_over_limit(client):
+    """max_turns=101 exceeds maximum and should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_turns": 101,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_budget_zero(client):
+    """max_budget_usd=0 is invalid (must be > 0) and should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_budget_usd": 0.0,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_budget_negative(client):
+    """max_budget_usd=-1 is invalid and should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_budget_usd": -1.0,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_budget_over_limit(client):
+    """max_budget_usd=50.01 exceeds max and should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_budget_usd": 50.01,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_max_budget_exact_max(client):
+    """max_budget_usd=50.0 is the exact upper boundary and should be accepted (202)."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "max_budget_usd": 50.0,
+        "dry_run": True,
+    })
+    assert r.status_code == 202
+
+
+def test_prompt_too_long(client):
+    """Prompt exceeding 100000 chars should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "a" * 100_001,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_system_prompt_too_long(client):
+    """system_prompt exceeding 50000 chars should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "system_prompt": "a" * 50_001,
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+
+
+def test_invalid_plugin_name(client):
+    """Plugin name with special characters should return 422."""
+    r = client.post("/jobs", json={
+        "agent_id": "e2e-val",
+        "engine": "claude-code",
+        "prompt": "hello",
+        "plugins": ["../evil-plugin"],
+        "dry_run": True,
+    })
+    assert r.status_code == 422
+

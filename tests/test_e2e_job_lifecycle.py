@@ -92,8 +92,10 @@ class TestCancel:
         job_id = r.json()["job_id"]
         time.sleep(1)
 
-        # First cancel
-        client.delete(f"/jobs/{job_id}")
+        # First cancel - must succeed (200) for the second to be a meaningful double-cancel
+        r_first = client.delete(f"/jobs/{job_id}")
+        if r_first.status_code != 200:
+            pytest.skip(f"Job already terminal before first cancel (status {r_first.status_code}) - cannot test double cancel")
 
         # Second cancel → 409
         r = client.delete(f"/jobs/{job_id}")
@@ -122,6 +124,47 @@ class TestListJobs:
         """Invalid status filter → 422 with clear error message."""
         r = client.get("/jobs?status=banana")
         assert r.status_code == 422
+
+
+class TestListJobsPagination:
+    """Pagination and boundary tests for GET /jobs."""
+
+    def test_list_jobs_pagination(self, client):
+        """offset and limit params should slice results."""
+        r_all = client.get("/jobs?limit=200&offset=0")
+        assert r_all.status_code == 200
+        all_jobs = r_all.json()["jobs"]
+
+        if len(all_jobs) < 2:
+            pytest.skip("Not enough jobs to test pagination")
+
+        r_page = client.get("/jobs?limit=1&offset=1")
+        assert r_page.status_code == 200
+        page_jobs = r_page.json()["jobs"]
+        assert len(page_jobs) == 1
+        assert page_jobs[0]["job_id"] == all_jobs[1]["job_id"]
+
+    def test_list_jobs_limit_boundary(self, client):
+        """limit=0 and limit=201 should return 422; limit=200 is valid."""
+        for bad in (0, 201):
+            r = client.get(f"/jobs?limit={bad}")
+            assert r.status_code == 422, f"Expected 422 for limit={bad}"
+
+        r = client.get("/jobs?limit=200")
+        assert r.status_code == 200
+
+    def test_list_jobs_negative_offset(self, client):
+        """Negative offset should return 422."""
+        r = client.get("/jobs?offset=-1")
+        assert r.status_code == 422
+
+    def test_list_jobs_filter_completed(self, client):
+        """status=completed filter should return only completed jobs."""
+        r = client.get("/jobs?status=completed")
+        assert r.status_code == 200
+        jobs = r.json()["jobs"]
+        for job in jobs:
+            assert job["status"] == "completed"
 
 
 class TestRemovedEndpoints:
