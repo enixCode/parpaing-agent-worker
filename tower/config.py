@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import docker
 
@@ -37,6 +38,28 @@ TOWER_API_KEY = os.environ.get("TOWER_API_KEY", "")
 
 # Transparent proxy for workers (empty = direct internet access)
 PROXY_URL = os.environ.get("PROXY_URL", "")
+
+# LLM Gateway - proxy API keys away from worker containers (empty = disabled)
+_gateway_url_raw = os.environ.get("GATEWAY_URL", "")
+
+def _validate_gateway_url(url: str) -> str:
+    """Validate GATEWAY_URL to prevent SSRF: only http/https, no localhost/internal hosts."""
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"GATEWAY_URL must use http or https scheme, got: {parsed.scheme!r}")
+    host = (parsed.hostname or "").lower()
+    _blocked = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+    if host in _blocked:
+        raise ValueError(f"GATEWAY_URL host {host!r} is not allowed (SSRF protection)")
+    # Block link-local and private ranges via prefix checks
+    if host.startswith("169.254.") or host.startswith("metadata."):
+        raise ValueError(f"GATEWAY_URL host {host!r} is not allowed (SSRF protection)")
+    return url
+
+GATEWAY_URL = _validate_gateway_url(_gateway_url_raw)
+GATEWAY_CONTAINER = os.environ.get("GATEWAY_CONTAINER", "agent-gateway")
 
 MAX_RESULT_SIZE = int(os.environ.get("MAX_RESULT_SIZE", str(10 * 1024 * 1024)))  # 10 MB
 

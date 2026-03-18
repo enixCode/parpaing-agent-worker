@@ -10,10 +10,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
+import httpx
+
 from .config import (
     VERSION, MAX_CONCURRENT_JOBS, JOB_TTL_HOURS, MAX_RETAINED_JOBS,
     DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH,
-    docker_client,
+    GATEWAY_URL, docker_client,
 )
 from .job_store import JobStore, JobStatus
 from .job_runner import execute_job, recover_jobs, cleanup_loop
@@ -156,6 +158,15 @@ async def health():
         checks["pool"] = f"{pool_ready} ready"
     except Exception:
         checks["pool"] = "unknown"
+
+    if GATEWAY_URL:
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                r = await client.get(f"{GATEWAY_URL}/health")
+                checks["gateway"] = "ok" if r.status_code == 200 else "unavailable"
+        except Exception:
+            checks["gateway"] = "unavailable"
+            healthy = False
 
     status_code = 200 if healthy else 503
     return JSONResponse(

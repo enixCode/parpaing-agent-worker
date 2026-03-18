@@ -115,7 +115,8 @@ Each worker container runs in isolation. Hardening is **conditional** on `WORKER
 - Memory & CPU limits (global defaults from config)
 - Non-root `agent` user (UID 1000)
 - Shared `agent-workers` network with ICC disabled (workers can't see each other)
-- `internal=True` when `PROXY_URL` is set (all traffic through proxy)
+- `internal=True` when `PROXY_URL` or `GATEWAY_URL` is set
+- LLM Gateway mode (`GATEWAY_URL`): ICC=true + internal=true, workers get placeholder keys, real keys stay in gateway
 - Container destroyed after each job (completely clean)
 
 ## File Structure
@@ -124,6 +125,8 @@ Each worker container runs in isolation. Hardening is **conditional** on `WORKER
 agent-worker/
 ├── db/                    ← PostgreSQL schema
 │   └── init.sql           ← jobs + containers tables
+├── gateway/               ← LLM Gateway (nginx reverse proxy)
+│   └── gateway.conf.template ← nginx template (envsubst)
 ├── docs/                  ← API & config documentation
 │   ├── api.md
 │   ├── request.md
@@ -295,6 +298,8 @@ run-job.sh (7 steps):
 | `WORKER_IMAGE` | Docker image name for worker |
 | `ENGINES_DIR` | Path to engine TOML configs (default: `/app/engines`) |
 | `PROXY_URL` | Transparent proxy for workers (optional) |
+| `GATEWAY_URL` | LLM Gateway URL - hides API keys from workers (empty = disabled) |
+| `GATEWAY_CONTAINER` | Gateway Docker container name (default: agent-gateway) |
 | `MAX_RESULT_SIZE` | Max result.json size in bytes (default: 10 MB) |
 | `MAX_CONCURRENT_JOBS` | Max parallel containers per Tower instance (default: 10) |
 | `JOB_TTL_HOURS` | Hours to keep finished jobs (default: 24) |

@@ -69,6 +69,24 @@ services:
     networks:
       - agent-net
 
+  gateway:
+    image: nginx:alpine
+    container_name: agent-gateway
+    profiles: ["gateway"]
+    restart: always
+    volumes:
+      - ./gateway/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   worker:
     build: ./worker
     profiles: ["build-only"]

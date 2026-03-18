@@ -62,7 +62,10 @@ def load_engine(engine_id: str) -> EngineConfig | None:
 
 
 def is_engine_available(engine: EngineConfig) -> bool:
-    """Check if at least one auth env var is set."""
+    """Check if at least one auth env var is set (gateway mode = always available)."""
+    from .config import GATEWAY_URL
+    if GATEWAY_URL:
+        return True
     if not engine.env_auth:
         return True
     return any(os.environ.get(k) for k in engine.env_auth)

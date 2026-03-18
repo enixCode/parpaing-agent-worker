@@ -181,6 +181,58 @@ Runs after claude finishes. Receives env vars:
 
 Use it to collect output, cleanup workspace, or create summaries.
 
+## LLM Gateway (Optional)
+
+Route all LLM API calls through a reverse proxy so that real API keys never reach worker containers. Workers get placeholder keys and `*_BASE_URL` overrides pointing to the gateway.
+
+### How it works
+
+```
+Worker Container                          Gateway (nginx:alpine)
+  ANTHROPIC_BASE_URL=http://gateway:4000    /anthropic/* -> api.anthropic.com/*
+  ANTHROPIC_API_KEY=gateway (placeholder)   inject real x-api-key header
+  OPENAI_BASE_URL=http://gateway:4000       /openai/* -> api.openai.com/*
+  OPENAI_API_KEY=gateway (placeholder)      inject real Authorization header
+```
+
+### Setup
+
+1. Enable hardening (required for gateway mode):
+
+```env
+WORKER_HARDENED=true
+GATEWAY_URL=http://agent-gateway:4000
+```
+
+2. Start with the gateway profile:
+
+```bash
+docker compose --profile gateway up -d
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `GATEWAY_URL` | - | Gateway URL (empty = disabled, keys injected directly) |
+| `GATEWAY_CONTAINER` | `agent-gateway` | Gateway Docker container name |
+
+### Security
+
+- `WORKER_HARDENED=true` is mandatory when using the gateway (pool refuses to start otherwise)
+- `cap_drop=ALL` prevents workers from sniffing traffic on the shared network
+- The worker network is set to `internal=true` (no direct internet) with ICC enabled (workers can reach gateway)
+- Workers only see placeholder API keys - real keys stay in the gateway container
+
+### Health
+
+The `/health` endpoint includes a `gateway` check when `GATEWAY_URL` is set:
+
+```bash
+curl http://localhost:8420/health
+# {"status": "ok", "checks": {"db": "ok", "docker": "ok", "pool": "3 ready", "gateway": "ok"}}
+```
+
 ## Transparent Proxy (Optional)
 
 Route all worker outbound traffic through a proxy. Set `PROXY_URL` to an externally accessible proxy address:

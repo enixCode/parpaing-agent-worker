@@ -10,7 +10,8 @@ import asyncpg
 from .config import (
     docker_client, WORKER_IMAGE, WORKER_NET,
     WORKER_MEM_LIMIT, WORKER_CPU_LIMIT, WORKER_HARDENED,
-    PROXY_URL, POOL_SIZE, POOL_CHECK_INTERVAL, POOL_MAX_IDLE,
+    PROXY_URL, GATEWAY_URL, GATEWAY_CONTAINER,
+    POOL_SIZE, POOL_CHECK_INTERVAL, POOL_MAX_IDLE,
 )
 from .engines import list_engines
 
@@ -35,6 +36,11 @@ class ContainerPool:
 
     async def start(self, db_pool: asyncpg.Pool):
         """Attach to shared DB pool, ensure network, clean stale, fill pool, start maintenance."""
+        if GATEWAY_URL and not WORKER_HARDENED:
+            raise RuntimeError(
+                "GATEWAY_URL requires WORKER_HARDENED=true "
+                "(cap_drop=ALL prevents network interception)"
+            )
         self._pool = db_pool
         self._network_id = await asyncio.to_thread(self._ensure_network)
         await self._cleanup_stale()
@@ -174,24 +180,38 @@ class ContainerPool:
             return net.id
         except Exception:
             pass
+        use_gateway = bool(GATEWAY_URL)
         net = docker_client().networks.create(
             WORKER_NET,
             driver="bridge",
-            internal=bool(PROXY_URL),
-            options={"com.docker.network.bridge.enable_icc": "false"},
+            internal=bool(PROXY_URL) or use_gateway,
+            options={
+                "com.docker.network.bridge.enable_icc": str(use_gateway).lower(),
+            },
         )
-        logger.info("Created worker network: %s (icc=false, internal=%s)", WORKER_NET, bool(PROXY_URL))
+        logger.info(
+            "Created worker network: %s (icc=%s, internal=%s)",
+            WORKER_NET, use_gateway, bool(PROXY_URL) or use_gateway,
+        )
         return net.id
 
     async def _create_warm(self, status: str = "ready") -> str:
         """Create a warm container on the shared network, insert into DB. Returns container_id."""
-        # Collect all auth env vars declared by all engines
         env = {}
-        for engine in list_engines():
-            for key in engine.get("env_auth", []):
-                val = os.environ.get(key, "")
-                if val:
-                    env[key] = val
+        if GATEWAY_URL:
+            # Gateway mode - workers get placeholder keys + base URL override
+            gateway = GATEWAY_URL.rstrip("/")
+            env["ANTHROPIC_BASE_URL"] = f"{gateway}/anthropic"
+            env["OPENAI_BASE_URL"] = f"{gateway}/openai"
+            env["ANTHROPIC_API_KEY"] = "gateway"
+            env["OPENAI_API_KEY"] = "gateway"
+        else:
+            # Direct mode - collect all auth env vars declared by all engines
+            for engine in list_engines():
+                for key in engine.get("env_auth", []):
+                    val = os.environ.get(key, "")
+                    if val:
+                        env[key] = val
         if PROXY_URL:
             env.update({
                 "HTTP_PROXY": PROXY_URL, "HTTPS_PROXY": PROXY_URL,
@@ -226,11 +246,28 @@ class ContainerPool:
             docker_client().containers.run, **run_kwargs,
         )
 
+        # Connect gateway container to worker network (if not already connected)
+        if GATEWAY_URL:
+            await self._connect_gateway()
+
         await self._pool.execute(
             "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
             container.id, self._network_id, status,
         )
         return container.id
+
+    async def _connect_gateway(self):
+        """Connect the gateway container to the worker network (idempotent)."""
+        try:
+            gw = await asyncio.to_thread(
+                docker_client().containers.get, GATEWAY_CONTAINER,
+            )
+            net = await asyncio.to_thread(
+                docker_client().networks.get, WORKER_NET,
+            )
+            await asyncio.to_thread(net.connect, gw)
+        except Exception:
+            pass  # already connected or gateway not running
 
     async def _destroy_container(self, container_id: str):
         """Kill + remove a container. Tolerant to failures."""
