@@ -102,7 +102,7 @@ async def inject_config(container, config: JobConfig, dry_run: bool = False):
         asyncio.to_thread(container.put_archive, "/tmp", tar_data),
         timeout=60,
     )
-    logger.debug("Injected config into container %s", container.short_id)
+    logger.info("Injected config into container %s", container.short_id)
 
 
 # --- Result extraction ---

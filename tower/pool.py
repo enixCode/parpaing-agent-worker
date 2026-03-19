@@ -6,6 +6,7 @@ import os
 import uuid
 
 import asyncpg
+import docker.errors
 
 from .config import (
     docker_client, WORKER_IMAGE, WORKER_NET,
@@ -90,6 +91,7 @@ class ContainerPool:
             container_id,
         )
         await self._destroy_container(container_id)
+        logger.info("Pool: released container %s", container_id[:12])
 
     # --- Maintenance ---
 
@@ -266,8 +268,11 @@ class ContainerPool:
                 docker_client().networks.get, WORKER_NET,
             )
             await asyncio.to_thread(net.connect, gw)
-        except Exception:
-            pass  # already connected or gateway not running
+        except docker.errors.APIError as e:
+            if "already exists" not in str(e):
+                logger.warning("Gateway connect failed: %s", e)
+        except Exception as e:
+            logger.warning("Gateway connect failed: %s", e)
 
     async def _destroy_container(self, container_id: str):
         """Kill + remove a container. Tolerant to failures."""

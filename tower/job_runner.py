@@ -116,7 +116,10 @@ async def _wait_and_finish(job_id: str, container_id: str, container,
     output = await _collect_output(job_id, container, exit_code, logs)
 
     await pool.release(container_id)
-    await _finish_and_webhook(job_id, output, store, webhook_url)
+    updated = await _finish_and_webhook(job_id, output, store, webhook_url)
+    if updated:
+        status = "completed" if exit_code == 0 else "failed"
+        logger.info("Job %s %s (exit_code=%d)", job_id, status, exit_code)
 
 
 # --- Job execution ---
@@ -133,6 +136,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
         if not await store.start_job(job_id, started_at=now):
             logger.info("Job %s already taken or cancelled", job_id)
             return
+        logger.info("Job %s running", job_id)
 
         # Lazy import to avoid circular dependency
         from .main import JOB_DURATION
@@ -144,6 +148,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
             timeout = config.timeout or WORKER_TIMEOUT_SECONDS
 
             container_id, _network_id = await pool.acquire()
+            logger.info("Job %s acquired container %s", job_id, container_id[:12])
             container = await asyncio.to_thread(get_container, container_id)
 
             if not await store.set_container(job_id, container_id):

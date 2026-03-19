@@ -7,7 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 import httpx
@@ -25,7 +25,13 @@ from .engines import list_engines as _list_engines, load_engine, is_engine_avail
 from .profiles import list_profiles as _list_profiles, _load_profile
 
 
-logger = logging.getLogger("tower")
+_log = logging.getLogger("tower")
+_log.setLevel(logging.INFO)
+if not _log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    _log.addHandler(_h)
+logger = _log
 
 store = JobStore(dsn=DATABASE_URL, max_retained=MAX_RETAINED_JOBS, ttl_hours=JOB_TTL_HOURS)
 pool = ContainerPool()
@@ -59,9 +65,14 @@ async def lifespan(app):
     await store.close()
 
 
-_AUTH_PUBLIC = {"/health", "/metrics", "/docs", "/openapi.json", "/engines", "/profiles"}
+_AUTH_PUBLIC = {"/", "/health", "/metrics", "/docs", "/openapi.json", "/engines", "/profiles"}
 
 app = FastAPI(title="Parpaing", version=VERSION, docs_url=None, redoc_url=None, lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse("/ui")
 
 
 @app.get("/docs", include_in_schema=False)
@@ -127,6 +138,7 @@ async def auth_middleware(request: Request, call_next):
     if TOWER_API_KEY and request.url.path not in _AUTH_PUBLIC and not request.url.path.startswith("/ui"):
         token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not hmac.compare_digest(token, TOWER_API_KEY):
+            logger.warning("Auth failed: %s %s", request.method, request.url.path)
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
     return await call_next(request)
 
@@ -144,12 +156,14 @@ async def health():
     except Exception:
         checks["db"] = "unavailable"
         healthy = False
+        logger.warning("Health check: DB unavailable")
 
     try:
         docker_client().ping()
     except Exception:
         checks["docker"] = "unavailable"
         healthy = False
+        logger.warning("Health check: Docker unavailable")
 
     try:
         pool_ready = await store.db_pool.fetchval(
@@ -222,6 +236,7 @@ async def create_job(req: JobCreateRequest) -> JobCreateResponse:
     job_id = f"{req.agent_id}-{uuid.uuid4().hex[:12]}"
     await store.create(job_id, req, req.webhook_url)
     JOBS_TOTAL.labels(profile=req.profile).inc()
+    logger.info("Job %s created (engine=%s, profile=%s, agent=%s)", job_id, req.engine, req.profile, req.agent_id)
     asyncio.create_task(execute_job(job_id, store, semaphore, pool, dry_run=req.dry_run))
     return JobCreateResponse(job_id=job_id, status="pending")
 
@@ -263,13 +278,15 @@ async def cancel_job(job_id: str):
     if not cancelled:
         # Re-fetch to get current status (avoid stale data)
         job = await store.get(job_id)
-        raise HTTPException(409, f"Job already {job.status if job else 'unknown'}")
+        current = job.status.value if job and hasattr(job.status, "value") else (job.status if job else "unknown")
+        raise HTTPException(409, f"Job already {current}")
 
     # Re-fetch after atomic update to get current container_id
     job = await store.get(job_id)
     if job and job.container_id:
         await pool.release(job.container_id)
 
+    logger.info("Job %s cancelled", job_id)
     return {"job_id": job_id, "status": "cancelled"}
 
 
