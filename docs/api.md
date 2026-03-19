@@ -179,7 +179,7 @@ List all jobs with pagination.
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `status` | string | null | Filter by status: `pending`, `running`, `completed`, `failed`, `cancelled` |
-| `limit` | int | 50 | Max jobs to return (1–200) |
+| `limit` | int | 50 | Max jobs to return (1-200) |
 | `offset` | int | 0 | Number of jobs to skip (>= 0) |
 
 **200:** Paginated envelope
@@ -250,7 +250,7 @@ Block until the job finishes (completed, failed, or cancelled). Returns the full
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `timeout` | int | 3600 | Max wait time in seconds (1–7200) |
+| `timeout` | int | 3600 | Max wait time in seconds (1-7200) |
 
 **200** - job finished:
 ```json

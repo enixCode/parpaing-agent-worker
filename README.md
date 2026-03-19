@@ -173,7 +173,7 @@ Check which engines are currently available: `GET /engines`.
 | `WORKER_IMAGE` | `agent-worker-worker` | Docker image used for worker containers |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration before the container is killed |
 | `WORKER_MEM_LIMIT` | `512m` | Memory limit per worker container |
-| `WORKER_CPU_LIMIT` | `2.0` | CPU quota per worker container |
+| `WORKER_CPU_LIMIT` | `1.0` | CPU quota per worker container |
 | `WORKER_HARDENED` | `false` | Enable container hardening (read-only FS, cap_drop, pids_limit) |
 | `WORKER_NET` | `agent-workers` | Docker network name for worker containers |
 

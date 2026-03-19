@@ -28,7 +28,7 @@ All configuration is via environment variables in `.env`.
 | `MAX_RETAINED_JOBS` | `1000` | Max finished jobs kept in DB |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Default container timeout (1 hour) |
 | `WORKER_MEM_LIMIT` | `512m` | Default container memory limit |
-| `WORKER_CPU_LIMIT` | `2.0` | Default container CPU limit |
+| `WORKER_CPU_LIMIT` | `1.0` | Default container CPU limit |
 | `PROXY_URL` | - | Transparent proxy for workers (must be accessible from worker networks) |
 | `MAX_RESULT_SIZE` | `10485760` | Max result.json size in bytes (10 MB default, prevents OOM) |
 | `POOL_SIZE` | `3` | Number of warm containers maintained in the pool |

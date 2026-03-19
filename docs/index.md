@@ -136,7 +136,7 @@ See [`docs/profiles.md`](docs/profiles.md) and [`docs/templates.md`](docs/templa
 | `MAX_CONCURRENT_JOBS` | `10` | Max parallel jobs per Tower |
 | `POOL_SIZE` | `3` | Warm containers in pool |
 | `WORKER_MEM_LIMIT` | `512m` | Memory per worker container |
-| `WORKER_CPU_LIMIT` | `2.0` | CPUs per worker container |
+| `WORKER_CPU_LIMIT` | `1.0` | CPUs per worker container |
 | `WORKER_HARDENED` | `false` | Container hardening (read_only, cap_drop, pids_limit) |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration |
 | `PROXY_URL` | - | HTTP proxy for worker internet access |

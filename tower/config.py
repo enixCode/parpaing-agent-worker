@@ -23,7 +23,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://tower:tower@db:5432/
 
 WORKER_TIMEOUT_SECONDS = int(os.environ.get("WORKER_TIMEOUT_SECONDS", "3600"))
 WORKER_MEM_LIMIT = os.environ.get("WORKER_MEM_LIMIT", "512m")
-WORKER_CPU_LIMIT = float(os.environ.get("WORKER_CPU_LIMIT", "2.0"))
+WORKER_CPU_LIMIT = float(os.environ.get("WORKER_CPU_LIMIT", "1.0"))
 
 # Worker hardening (read_only, cap_drop, tmpfs - enable in production)
 WORKER_HARDENED = os.environ.get("WORKER_HARDENED", "false").lower() in ("true", "1", "yes")

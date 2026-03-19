@@ -306,7 +306,7 @@ run-job.sh (7 steps):
 | `MAX_RETAINED_JOBS` | Max finished jobs in DB (default: 1000) |
 | `WORKER_TIMEOUT_SECONDS` | Max worker container runtime (default: 3600) |
 | `WORKER_MEM_LIMIT` | Worker memory limit (default: 512m) |
-| `WORKER_CPU_LIMIT` | Worker CPU limit (default: 2.0) |
+| `WORKER_CPU_LIMIT` | Worker CPU limit (default: 1.0) |
 | `WORKER_HARDENED` | Enable container hardening (read_only, cap_drop, tmpfs) (default: false) |
 | `POOL_SIZE` | Warm containers in pool (default: 3) |
 | `POOL_CHECK_INTERVAL` | Pool maintenance interval in seconds (default: 10) |
