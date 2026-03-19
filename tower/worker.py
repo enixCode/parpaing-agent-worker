@@ -95,14 +95,14 @@ def _build_config_tar(config: JobConfig, dry_run: bool = False) -> bytes:
     return buf.read()
 
 
-async def inject_config(container, config: JobConfig, dry_run: bool = False):
+async def inject_config(container, config: JobConfig, dry_run: bool = False, job_id: str = ""):
     """Inject config files into a running container via put_archive."""
     tar_data = _build_config_tar(config, dry_run)
     await asyncio.wait_for(
         asyncio.to_thread(container.put_archive, "/tmp", tar_data),
         timeout=60,
     )
-    logger.info("Injected config into container %s", container.short_id)
+    logger.info("Injected config into container %s (job %s)", container.short_id, job_id)
 
 
 # --- Result extraction ---

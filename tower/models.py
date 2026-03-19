@@ -15,6 +15,13 @@ _SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _MAX_PROMPT_LEN = 100_000
 _MAX_SYSTEM_PROMPT_LEN = 50_000
 
+# PostgreSQL JSONB rejects null bytes and bare surrogates
+_PG_UNSAFE = re.compile(r"[\x00\ud800-\udfff]")
+
+def _strip_pg_unsafe(s: str) -> str:
+    """Remove null bytes and bare surrogates that PostgreSQL JSONB rejects."""
+    return _PG_UNSAFE.sub("", s)
+
 
 class AgentRunRequest(BaseModel):
     """Run a Claude Code agent in an isolated container."""
@@ -61,6 +68,8 @@ class AgentRunRequest(BaseModel):
     def validate_prompt(cls, v: str | None) -> str | None:
         if v is not None and len(v) > _MAX_PROMPT_LEN:
             raise ValueError(f"prompt exceeds {_MAX_PROMPT_LEN} characters")
+        if v is not None:
+            v = _strip_pg_unsafe(v)
         return v
 
     @field_validator("system_prompt")
@@ -68,6 +77,8 @@ class AgentRunRequest(BaseModel):
     def validate_system_prompt(cls, v: str | None) -> str | None:
         if v is not None and len(v) > _MAX_SYSTEM_PROMPT_LEN:
             raise ValueError(f"system_prompt exceeds {_MAX_SYSTEM_PROMPT_LEN} characters")
+        if v is not None:
+            v = _strip_pg_unsafe(v)
         return v
 
     @field_validator("plugins")
@@ -103,7 +114,7 @@ class AgentRunRequest(BaseModel):
     @classmethod
     def validate_max_budget(cls, v: float | None) -> float | None:
         if v is not None and (v <= 0 or v > 50.0):
-            raise ValueError("max_budget_usd must be between 0 and 50")
+            raise ValueError("max_budget_usd must be greater than 0 and at most 50")
         return v
 
 

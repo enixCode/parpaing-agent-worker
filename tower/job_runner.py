@@ -115,9 +115,10 @@ async def _wait_and_finish(job_id: str, container_id: str, container,
     logs = (await asyncio.to_thread(container.logs)).decode(errors="replace")
     output = await _collect_output(job_id, container, exit_code, logs)
 
-    await pool.release(container_id)
     updated = await _finish_and_webhook(job_id, output, store, webhook_url)
     if updated:
+        # We won the finish - release container (cancel handler didn't)
+        await pool.release(container_id)
         status = "completed" if exit_code == 0 else "failed"
         logger.info("Job %s %s (exit_code=%d)", job_id, status, exit_code)
 
@@ -156,7 +157,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
                 await pool.release(container_id)
                 return
 
-            await inject_config(container, config, dry_run=dry_run)
+            await inject_config(container, config, dry_run=dry_run, job_id=job_id)
             await _wait_and_finish(job_id, container_id, container,
                                    timeout, store, pool, job.webhook_url)
 

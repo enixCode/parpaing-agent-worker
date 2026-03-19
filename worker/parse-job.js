@@ -50,7 +50,8 @@ for (const [configKey, cliFlag] of Object.entries(flagMap)) {
     if (value) args.push(cliFlag);
   } else {
     args.push(cliFlag);
-    args.push(String(value));
+    args.push(typeof value === 'number' && Number.isInteger(value) && configKey.includes('budget')
+      ? value.toFixed(2) : String(value));
   }
 }
 

@@ -64,25 +64,37 @@ class ContainerPool:
     async def acquire(self) -> tuple[str, str]:
         """Atomically acquire a ready container. Returns (container_id, network_id).
 
-        Raises RuntimeError if no container available (pool exhausted).
+        Verifies container is alive before returning. Falls back to on-demand creation.
         """
-        row = await self._pool.fetchrow(
-            """UPDATE containers SET status = 'busy'
-               WHERE id = (
-                   SELECT id FROM containers
-                   WHERE status = 'ready'
-                   ORDER BY created_at
-                   LIMIT 1
-                   FOR UPDATE SKIP LOCKED
-               )
-               RETURNING container_id, network_id""",
-        )
-        if not row:
-            # Pool exhausted - create one on-demand, inserted directly as busy
-            logger.warning("Pool exhausted, creating container on-demand")
-            container_id = await self._create_warm(status="busy")
-            return container_id, self._network_id
-        return row["container_id"], row["network_id"]
+        for _ in range(POOL_SIZE or 3):
+            row = await self._pool.fetchrow(
+                """UPDATE containers SET status = 'busy'
+                   WHERE id = (
+                       SELECT id FROM containers
+                       WHERE status = 'ready'
+                       ORDER BY created_at
+                       LIMIT 1
+                       FOR UPDATE SKIP LOCKED
+                   )
+                   RETURNING container_id, network_id""",
+            )
+            if not row:
+                break
+            # Verify container is still alive (handles external kills)
+            try:
+                c = await asyncio.to_thread(docker_client().containers.get, row["container_id"])
+                if c.status in ("running", "created"):
+                    return row["container_id"], row["network_id"]
+            except Exception:
+                await self._pool.execute(
+                    "DELETE FROM containers WHERE container_id = $1", row["container_id"],
+                )
+                logger.warning("Pool: skipped dead container %s", row["container_id"][:12])
+
+        # Pool exhausted or all dead - create on-demand
+        logger.warning("Pool exhausted, creating container on-demand")
+        container_id = await self._create_warm(status="busy")
+        return container_id, self._network_id
 
     async def release(self, container_id: str):
         """Destroy container, remove from DB. Network is shared - left alive."""
