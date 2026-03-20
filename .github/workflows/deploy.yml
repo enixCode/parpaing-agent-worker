@@ -2,6 +2,9 @@ name: Deploy
 on:
   push:
     branches: [main]
+
+permissions: {}
+
 jobs:
   deploy:
     if: github.repository == 'enixCode/parpaing-agent-worker'
