@@ -1,9 +1,12 @@
-FROM node:22-slim
+FROM dhi.io/node:22-dev
 
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates curl jq gnupg2 dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
+    && find / -xdev -perm -4000 -type f -exec chmod u-s {} \; 2>/dev/null || true \
+    && find / -xdev -perm -2000 -type f -exec chmod g-s {} \; 2>/dev/null || true
 
 # Engine: Claude Code
 RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
@@ -27,4 +30,4 @@ RUN echo "agent:x:1000:1000:agent:/home/agent:/bin/sh" >> /etc/passwd \
 WORKDIR /workspace
 USER agent
 
-ENTRYPOINT ["/opt/entrypoint.sh"]
+ENTRYPOINT ["dumb-init", "--", "/opt/entrypoint.sh"]

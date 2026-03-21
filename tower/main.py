@@ -173,14 +173,13 @@ async def health():
     except Exception:
         checks["pool"] = "unknown"
 
-    if GATEWAY_URL:
-        try:
-            async with httpx.AsyncClient(timeout=3) as client:
-                r = await client.get(f"{GATEWAY_URL}/health")
-                checks["gateway"] = "ok" if r.status_code == 200 else "unavailable"
-        except Exception:
-            checks["gateway"] = "unavailable"
-            healthy = False
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            r = await client.get(f"{GATEWAY_URL}/health")
+            checks["gateway"] = "ok" if r.status_code == 200 else "unavailable"
+    except Exception:
+        checks["gateway"] = "unavailable"
+        healthy = False
 
     status_code = 200 if healthy else 503
     return JSONResponse(

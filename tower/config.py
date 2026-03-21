@@ -22,11 +22,11 @@ MAX_RETAINED_JOBS = int(os.environ.get("MAX_RETAINED_JOBS", "1000"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://tower:tower@db:5432/tower")
 
 WORKER_TIMEOUT_SECONDS = int(os.environ.get("WORKER_TIMEOUT_SECONDS", "3600"))
-WORKER_MEM_LIMIT = os.environ.get("WORKER_MEM_LIMIT", "512m")
+WORKER_MEM_LIMIT = os.environ.get("WORKER_MEM_LIMIT", "2g")
 WORKER_CPU_LIMIT = float(os.environ.get("WORKER_CPU_LIMIT", "1.0"))
 
-# Worker hardening (read_only, cap_drop, tmpfs - enable in production)
-WORKER_HARDENED = os.environ.get("WORKER_HARDENED", "false").lower() in ("true", "1", "yes")
+# gVisor runtime for kernel-level isolation (requires gVisor installed on host)
+WORKER_RUNTIME = os.environ.get("WORKER_RUNTIME", "")
 
 # Container pool
 POOL_SIZE = int(os.environ.get("POOL_SIZE", "3"))
@@ -36,16 +36,11 @@ POOL_MAX_IDLE = int(os.environ.get("POOL_MAX_IDLE", "3600"))
 # Tower API authentication (empty = no auth)
 TOWER_API_KEY = os.environ.get("TOWER_API_KEY", "")
 
-# Transparent proxy for workers (empty = direct internet access)
-PROXY_URL = os.environ.get("PROXY_URL", "")
-
-# LLM Gateway - proxy API keys away from worker containers (empty = disabled)
-_gateway_url_raw = os.environ.get("GATEWAY_URL", "")
+# LLM Gateway - hides API keys from worker containers (always enabled)
+_gateway_url_raw = os.environ.get("GATEWAY_URL", "http://agent-gateway:4000")
 
 def _validate_gateway_url(url: str) -> str:
     """Validate GATEWAY_URL to prevent SSRF: only http/https, no localhost/internal hosts."""
-    if not url:
-        return url
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"GATEWAY_URL must use http or https scheme, got: {parsed.scheme!r}")
@@ -53,7 +48,6 @@ def _validate_gateway_url(url: str) -> str:
     _blocked = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
     if host in _blocked:
         raise ValueError(f"GATEWAY_URL host {host!r} is not allowed (SSRF protection)")
-    # Block link-local and private ranges via prefix checks
     if host.startswith("169.254.") or host.startswith("metadata."):
         raise ValueError(f"GATEWAY_URL host {host!r} is not allowed (SSRF protection)")
     return url

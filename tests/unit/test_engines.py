@@ -1,7 +1,5 @@
 """Unit tests for engine config."""
 
-from unittest.mock import patch
-
 import pytest
 from tower.engines import EngineConfig, is_engine_available
 
@@ -25,15 +23,13 @@ class TestEngineConfig:
             claude_engine.id = "other"
 
 
-class TestEngineAvailabilityGateway:
-    """Engine availability when GATEWAY_URL is set."""
+class TestEngineAvailability:
+    """Engine availability - gateway always enabled, all engines available."""
 
-    def test_gateway_mode_always_available(self, claude_engine):
-        with patch("tower.engines.GATEWAY_URL", "http://gateway:4000", create=True), \
-             patch("tower.config.GATEWAY_URL", "http://gateway:4000"):
-            assert is_engine_available(claude_engine) is True
+    def test_always_available(self, claude_engine):
+        assert is_engine_available(claude_engine) is True
 
-    def test_gateway_mode_no_env_keys_needed(self):
+    def test_no_env_keys_needed(self):
         engine = EngineConfig(
             id="test", name="Test", description="",
             binary="test", prompt_flag="-p", static_args=[],
@@ -41,12 +37,4 @@ class TestEngineAvailabilityGateway:
             output_mode="stdout", output_format="json", output_path=None,
             env_auth=["MISSING_KEY_1", "MISSING_KEY_2"],
         )
-        with patch("tower.engines.GATEWAY_URL", "http://gateway:4000", create=True), \
-             patch("tower.config.GATEWAY_URL", "http://gateway:4000"):
-            assert is_engine_available(engine) is True
-
-    def test_no_gateway_requires_keys(self, claude_engine):
-        with patch("tower.engines.GATEWAY_URL", "", create=True), \
-             patch("tower.config.GATEWAY_URL", ""), \
-             patch.dict("os.environ", {}, clear=True):
-            assert is_engine_available(claude_engine) is False
+        assert is_engine_available(engine) is True

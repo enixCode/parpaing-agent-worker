@@ -191,8 +191,7 @@ Check which engines are currently available: `GET /engines`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PROXY_URL` | - | HTTP proxy for worker internet access |
-| `GATEWAY_URL` | - | LLM Gateway URL - hides API keys from workers (disabled if empty) |
+| `GATEWAY_URL` | `http://agent-gateway:4000` | LLM Gateway URL - hides API keys from workers |
 | `GATEWAY_CONTAINER` | `agent-gateway` | Docker container name of the LLM gateway |
 
 ### Database
@@ -217,16 +216,9 @@ Hardening enables: `read_only` root filesystem, `cap_drop=ALL`, `no-new-privileg
 
 Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of the load balancer.
 
-### LLM Gateway (optional)
+### LLM Gateway
 
-The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. Workers receive placeholder keys - real API keys stay inside the gateway and are never exposed to the job code.
-
-```bash
-# Start with the gateway profile
-docker compose --profile gateway up -d
-```
-
-Set `GATEWAY_URL=http://agent-gateway:4000` and `WORKER_HARDENED=true` in `.env`. The worker network is set to `internal=true` so workers can only reach the gateway, not the internet directly.
+The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The worker network is `internal=true` so workers can only reach the gateway, not the internet directly.
 
 ## Project Structure
 
@@ -247,7 +239,7 @@ agent-worker/
 │   ├── entrypoint.sh      #   Waits for config injection, then runs job
 │   ├── run-job.sh         #   Engine-agnostic execution (hooks + CLI + result)
 │   └── parse-job.js       #   Translates job.json to shell variables
-├── gateway/               # LLM Gateway (nginx - optional)
+├── gateway/               # LLM Gateway (nginx)
 ├── profiles/              # Agent profiles (TOML)
 ├── templates/             # Jinja2 templates (prompts, agent instructions)
 ├── hooks/                 # Pre/post hook scripts

@@ -139,7 +139,7 @@ See [`docs/profiles.md`](docs/profiles.md) and [`docs/templates.md`](docs/templa
 | `WORKER_CPU_LIMIT` | `1.0` | CPUs per worker container |
 | `WORKER_HARDENED` | `false` | Container hardening (read_only, cap_drop, pids_limit) |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration |
-| `PROXY_URL` | - | HTTP proxy for worker internet access |
+| `GATEWAY_URL` | `http://agent-gateway:4000` | LLM Gateway URL - all LLM calls go through gateway, API keys never reach workers |
 
 ### Engine Authentication
 

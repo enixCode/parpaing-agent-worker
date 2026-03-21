@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import uuid
 
 import asyncpg
@@ -10,11 +9,10 @@ import docker.errors
 
 from .config import (
     docker_client, WORKER_IMAGE, WORKER_NET,
-    WORKER_MEM_LIMIT, WORKER_CPU_LIMIT, WORKER_HARDENED,
-    PROXY_URL, GATEWAY_URL, GATEWAY_CONTAINER,
+    WORKER_MEM_LIMIT, WORKER_CPU_LIMIT, WORKER_RUNTIME,
+    GATEWAY_URL, GATEWAY_CONTAINER,
     POOL_SIZE, POOL_CHECK_INTERVAL, POOL_MAX_IDLE,
 )
-from .engines import list_engines
 
 logger = logging.getLogger("tower.pool")
 
@@ -37,11 +35,6 @@ class ContainerPool:
 
     async def start(self, db_pool: asyncpg.Pool):
         """Attach to shared DB pool, ensure network, clean stale, fill pool, start maintenance."""
-        if GATEWAY_URL and not WORKER_HARDENED:
-            raise RuntimeError(
-                "GATEWAY_URL requires WORKER_HARDENED=true "
-                "(cap_drop=ALL prevents network interception)"
-            )
         self._pool = db_pool
         self._network_id = await asyncio.to_thread(self._ensure_network)
         await self._cleanup_stale()
@@ -187,52 +180,52 @@ class ContainerPool:
 
     @staticmethod
     def _ensure_network() -> str:
-        """Create or find the shared worker network. Returns network ID."""
+        """Create or find the shared worker network. Returns network ID.
+
+        Validates existing networks have the correct config (internal, ICC disabled).
+        Recreates the network if settings are wrong (e.g. created before hardening).
+        """
         try:
             net = docker_client().networks.get(WORKER_NET)
-            logger.info("Using existing worker network: %s", WORKER_NET)
-            return net.id
-        except Exception:
+            attrs = net.attrs or {}
+            is_internal = attrs.get("Internal", False)
+            icc = (attrs.get("Options") or {}).get("com.docker.network.bridge.enable_icc", "true")
+            if is_internal and icc == "false":
+                logger.info("Using existing worker network: %s", WORKER_NET)
+                return net.id
+            # Network exists but has wrong config - recreate
+            logger.warning("Worker network %s has wrong config (internal=%s, icc=%s), recreating", WORKER_NET, is_internal, icc)
+            net.remove()
+        except docker.errors.NotFound:
             pass
-        use_gateway = bool(GATEWAY_URL)
+        except docker.errors.APIError as e:
+            if "has active endpoints" in str(e):
+                logger.warning("Cannot recreate worker network (active containers) - using as-is")
+                return docker_client().networks.get(WORKER_NET).id
+            raise
         net = docker_client().networks.create(
             WORKER_NET,
             driver="bridge",
-            internal=bool(PROXY_URL) or use_gateway,
+            internal=True,
             options={
-                "com.docker.network.bridge.enable_icc": str(use_gateway).lower(),
+                "com.docker.network.bridge.enable_icc": "false",
             },
         )
-        logger.info(
-            "Created worker network: %s (icc=%s, internal=%s)",
-            WORKER_NET, use_gateway, bool(PROXY_URL) or use_gateway,
-        )
+        logger.info("Created worker network: %s (internal=true, icc=false)", WORKER_NET)
         return net.id
 
     async def _create_warm(self, status: str = "ready") -> str:
         """Create a warm container on the shared network, insert into DB. Returns container_id."""
-        env = {}
-        if GATEWAY_URL:
-            # Gateway mode - workers get placeholder keys + base URL override
-            gateway = GATEWAY_URL.rstrip("/")
-            env["ANTHROPIC_BASE_URL"] = f"{gateway}/anthropic"
-            env["OPENAI_BASE_URL"] = f"{gateway}/openai"
-            env["ANTHROPIC_API_KEY"] = "gateway"
-            env["OPENAI_API_KEY"] = "gateway"
-        else:
-            # Direct mode - collect all auth env vars declared by all engines
-            for engine in list_engines():
-                for key in engine.get("env_auth", []):
-                    val = os.environ.get(key, "")
-                    if val:
-                        env[key] = val
-        if PROXY_URL:
-            env.update({
-                "HTTP_PROXY": PROXY_URL, "HTTPS_PROXY": PROXY_URL,
-                "http_proxy": PROXY_URL, "https_proxy": PROXY_URL,
-            })
+        # Workers get placeholder keys + base URL override (gateway injects real keys)
+        gateway = GATEWAY_URL.rstrip("/")
+        env = {
+            "ANTHROPIC_BASE_URL": f"{gateway}/anthropic",
+            "OPENAI_BASE_URL": f"{gateway}/openai",
+            "ANTHROPIC_API_KEY": "gateway",
+            "OPENAI_API_KEY": "gateway",
+        }
 
-        # Base container config
+        # Container config - security always on
         run_kwargs = dict(
             image=WORKER_IMAGE,
             detach=True,
@@ -242,27 +235,22 @@ class ContainerPool:
             remove=False,
             mem_limit=WORKER_MEM_LIMIT,
             nano_cpus=int(WORKER_CPU_LIMIT * 1e9),
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            pids_limit=100,
+            ipc_mode="private",
         )
 
-        # Hardening (production)
-        if WORKER_HARDENED:
-            run_kwargs.update(
-                read_only=True,
-                cap_drop=["ALL"],
-                tmpfs={"/home/agent": "size=1g,uid=1000,gid=1000",
-                       "/tmp": "size=512m",
-                       "/output": "size=256m,uid=1000,gid=1000"},
-                security_opt=["no-new-privileges:true"],
-                pids_limit=256,
-            )
+        # gVisor kernel-level isolation
+        if WORKER_RUNTIME:
+            run_kwargs["runtime"] = WORKER_RUNTIME
 
         container = await asyncio.to_thread(
             docker_client().containers.run, **run_kwargs,
         )
 
-        # Connect gateway container to worker network (if not already connected)
-        if GATEWAY_URL:
-            await self._connect_gateway()
+        # Connect gateway container to worker network
+        await self._connect_container(GATEWAY_CONTAINER)
 
         await self._pool.execute(
             "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
@@ -270,21 +258,21 @@ class ContainerPool:
         )
         return container.id
 
-    async def _connect_gateway(self):
-        """Connect the gateway container to the worker network (idempotent)."""
+    async def _connect_container(self, container_name: str):
+        """Connect a container to the worker network (idempotent)."""
         try:
-            gw = await asyncio.to_thread(
-                docker_client().containers.get, GATEWAY_CONTAINER,
+            c = await asyncio.to_thread(
+                docker_client().containers.get, container_name,
             )
             net = await asyncio.to_thread(
                 docker_client().networks.get, WORKER_NET,
             )
-            await asyncio.to_thread(net.connect, gw)
+            await asyncio.to_thread(net.connect, c)
         except docker.errors.APIError as e:
             if "already exists" not in str(e):
-                logger.warning("Gateway connect failed: %s", e)
+                logger.warning("Connect %s to worker network failed: %s", container_name, e)
         except Exception as e:
-            logger.warning("Gateway connect failed: %s", e)
+            logger.warning("Connect %s to worker network failed: %s", container_name, e)
 
     async def _destroy_container(self, container_id: str):
         """Kill + remove a container. Tolerant to failures."""
