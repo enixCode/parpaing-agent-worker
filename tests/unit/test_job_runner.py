@@ -4,13 +4,13 @@ import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tower.job_runner import (
+from tower.runner.executor import (
     _sanitize_error,
     _collect_output,
     _finish_and_webhook,
     _fire_webhook,
 )
-from tower.job_store import JobStatus
+from tower.store import JobStatus
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +89,8 @@ class TestSanitizeErrorPassthrough:
 
 class TestCollectOutput:
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
     async def test_success(self, mock_result, mock_stderr):
         mock_result.return_value = {"cost": 0.01, "message": "done"}
         container = MagicMock()
@@ -102,8 +102,8 @@ class TestCollectOutput:
         assert "error" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
     async def test_failed_no_result(self, mock_result, mock_stderr):
         container = MagicMock()
 
@@ -113,8 +113,8 @@ class TestCollectOutput:
         assert output["error"] == "Agent exited with code 1"
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
     async def test_result_with_error_key(self, mock_result, mock_stderr):
         mock_result.return_value = {"error": "prompt too long"}
         container = MagicMock()
@@ -125,8 +125,8 @@ class TestCollectOutput:
         assert "result" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
     async def test_result_raw_fallback(self, mock_result, mock_stderr):
         mock_result.return_value = {"result_raw": "not valid json output"}
         container = MagicMock()
@@ -138,8 +138,8 @@ class TestCollectOutput:
         assert "error" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
     async def test_logs_truncated(self, mock_result, mock_stderr):
         long_logs = "x" * 5000
         container = MagicMock()
@@ -149,8 +149,8 @@ class TestCollectOutput:
         assert len(output["logs"]) == 2000
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.extract_stderr", new_callable=AsyncMock)
-    @patch("tower.job_runner.extract_result", new_callable=AsyncMock, return_value=None)
+    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock)
+    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
     async def test_stderr_included(self, mock_result, mock_stderr):
         mock_stderr.return_value = "warning: something"
         container = MagicMock()
@@ -191,7 +191,7 @@ class TestFinishAndWebhook:
         )
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner._fire_webhook", new_callable=AsyncMock)
+    @patch("tower.runner.executor._fire_webhook", new_callable=AsyncMock)
     async def test_webhook_fired_on_success(self, mock_webhook):
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=True)
@@ -202,7 +202,7 @@ class TestFinishAndWebhook:
         mock_webhook.assert_awaited_once_with("https://example.com/hook", output)
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner._fire_webhook", new_callable=AsyncMock)
+    @patch("tower.runner.executor._fire_webhook", new_callable=AsyncMock)
     async def test_webhook_not_fired_when_already_finished(self, mock_webhook):
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=False)
@@ -213,7 +213,7 @@ class TestFinishAndWebhook:
         mock_webhook.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner._fire_webhook", new_callable=AsyncMock)
+    @patch("tower.runner.executor._fire_webhook", new_callable=AsyncMock)
     async def test_webhook_not_fired_when_url_none(self, mock_webhook):
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=True)
@@ -230,8 +230,8 @@ class TestFinishAndWebhook:
 
 class TestFireWebhook:
     @pytest.mark.asyncio
-    @patch("tower.job_runner.is_internal_host", return_value=False)
-    @patch("tower.job_runner.httpx.AsyncClient")
+    @patch("tower.runner.executor.is_internal_host", return_value=False)
+    @patch("tower.runner.executor.httpx.AsyncClient")
     async def test_external_url_fires(self, mock_client_cls, mock_internal):
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -244,8 +244,8 @@ class TestFireWebhook:
         )
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.is_internal_host", return_value=True)
-    @patch("tower.job_runner.httpx.AsyncClient")
+    @patch("tower.runner.executor.is_internal_host", return_value=True)
+    @patch("tower.runner.executor.httpx.AsyncClient")
     async def test_internal_host_blocked(self, mock_client_cls, mock_internal):
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -256,8 +256,8 @@ class TestFireWebhook:
         mock_client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("tower.job_runner.is_internal_host", return_value=False)
-    @patch("tower.job_runner.httpx.AsyncClient")
+    @patch("tower.runner.executor.is_internal_host", return_value=False)
+    @patch("tower.runner.executor.httpx.AsyncClient")
     async def test_httpx_error_caught(self, mock_client_cls, mock_internal):
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("connection refused")

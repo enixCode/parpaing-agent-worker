@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tower.pool import ContainerPool
+from tower.store import ContainerPool
 
 
 async def _fake_to_thread(func, *args, **kwargs):
@@ -26,8 +26,8 @@ class TestPoolStartup:
         mock_docker = MagicMock()
         mock_docker.networks.get.return_value = mock_net
         mock_docker.containers.list.return_value = []
-        with patch("tower.pool.docker_client", return_value=mock_docker), \
-             patch("tower.pool.asyncio.to_thread", side_effect=_fake_to_thread), \
-             patch("tower.pool.POOL_SIZE", 0):
+        with patch("tower.store.pool.docker_client", return_value=mock_docker), \
+             patch("tower.store.pool.asyncio.to_thread", side_effect=_fake_to_thread), \
+             patch("tower.store.pool.POOL_SIZE", 0):
             await pool.start(db_pool)
             await pool.shutdown()

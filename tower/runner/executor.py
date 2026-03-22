@@ -10,11 +10,11 @@ from urllib.parse import urlparse
 import docker.errors
 import httpx
 
-from .config import WORKER_TIMEOUT_SECONDS, CLEANUP_INTERVAL, WEBHOOK_TIMEOUT
-from .job_store import JobStore, JobStatus
-from .models import is_internal_host
-from .pool import ContainerPool
-from .profiles import resolve_config
+from ..config import WORKER_TIMEOUT_SECONDS, CLEANUP_INTERVAL, WEBHOOK_TIMEOUT
+from ..store import JobStore, JobStatus
+from ..models import is_internal_host
+from ..store import ContainerPool
+from ..profiles import resolve_config
 from .worker import (
     inject_config, extract_result, extract_stderr,
     get_container,
@@ -140,7 +140,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
         logger.info("Job %s running", job_id)
 
         # Lazy import to avoid circular dependency
-        from .main import JOB_DURATION
+        from ..main import JOB_DURATION
 
         t0 = time.monotonic()
         container_id = None

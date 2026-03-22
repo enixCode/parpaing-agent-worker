@@ -9,7 +9,7 @@ import pytest
 
 from tower.engines import EngineConfig
 from tower.profiles import JobConfig
-from tower.worker import _build_config_tar, _extract_file_from_archive, extract_result, extract_stderr
+from tower.runner.worker import _build_config_tar, _extract_file_from_archive, extract_result, extract_stderr
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +300,7 @@ class TestBuildConfigTarHooksFile:
             max_budget_usd=None, output_format="json", system_prompt=None, mcp_config=None,
             claude_md=None, plugins=[], hook_pre="my-hook.sh", hook_post=None, timeout=None,
         )
-        with patch("tower.worker.HOOKS_DIR", tmp_path):
+        with patch("tower.runner.worker.HOOKS_DIR", tmp_path):
             data = _build_config_tar(config)
         files = _read_tar(data)
         assert files["config/pre-job.sh"] == b"#!/bin/bash\necho from file"
@@ -313,7 +313,7 @@ class TestBuildConfigTarHooksFile:
             max_budget_usd=None, output_format="json", system_prompt=None, mcp_config=None,
             claude_md=None, plugins=[], hook_pre="hook.sh", hook_post=None, timeout=None,
         )
-        with patch("tower.worker.HOOKS_DIR", tmp_path):
+        with patch("tower.runner.worker.HOOKS_DIR", tmp_path):
             data = _build_config_tar(config)
         assert _tar_member_mode(data, "config/pre-job.sh") == 0o755
 
@@ -323,7 +323,7 @@ class TestBuildConfigTarHooksFile:
             max_budget_usd=None, output_format="json", system_prompt=None, mcp_config=None,
             claude_md=None, plugins=[], hook_pre="../../etc/passwd", hook_post=None, timeout=None,
         )
-        with patch("tower.worker.HOOKS_DIR", tmp_path):
+        with patch("tower.runner.worker.HOOKS_DIR", tmp_path):
             data = _build_config_tar(config)
         files = _read_tar(data)
         assert "config/pre-job.sh" not in files
@@ -334,7 +334,7 @@ class TestBuildConfigTarHooksFile:
             max_budget_usd=None, output_format="json", system_prompt=None, mcp_config=None,
             claude_md=None, plugins=[], hook_pre="nonexistent.sh", hook_post=None, timeout=None,
         )
-        with patch("tower.worker.HOOKS_DIR", tmp_path):
+        with patch("tower.runner.worker.HOOKS_DIR", tmp_path):
             data = _build_config_tar(config)
         files = _read_tar(data)
         assert "config/pre-job.sh" not in files
@@ -347,7 +347,7 @@ class TestBuildConfigTarHooksFile:
             max_budget_usd=None, output_format="json", system_prompt=None, mcp_config=None,
             claude_md=None, plugins=[], hook_pre=None, hook_post="post.sh", timeout=None,
         )
-        with patch("tower.worker.HOOKS_DIR", tmp_path):
+        with patch("tower.runner.worker.HOOKS_DIR", tmp_path):
             data = _build_config_tar(config)
         files = _read_tar(data)
         assert files["config/post-job.sh"] == b"#!/bin/bash\necho post"
@@ -378,7 +378,7 @@ class TestExtractFileFromArchive:
         assert content == b""
         assert size == 0
 
-    @patch("tower.worker.MAX_RESULT_SIZE", 7000)
+    @patch("tower.runner.worker.MAX_RESULT_SIZE", 7000)
     def test_oversized_member_returns_empty_with_size(self):
         """member.size > MAX_RESULT_SIZE but tar fits under streaming cap.
 
@@ -392,7 +392,7 @@ class TestExtractFileFromArchive:
         assert content == b""
         assert size == 8000
 
-    @patch("tower.worker.MAX_RESULT_SIZE", 50)
+    @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
     def test_streaming_size_limit(self):
         """Total stream bytes exceeding MAX_RESULT_SIZE + 4096 triggers early abort."""
         # Create content larger than 50 + 4096 = 4146 bytes total tar size
@@ -431,7 +431,7 @@ class TestExtractResult:
         tar_stream = _make_tar("result.json", json.dumps(result_data).encode())
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_result(container)
         assert result == result_data
 
@@ -440,19 +440,19 @@ class TestExtractResult:
         tar_stream = _make_tar("result.json", b"not json {{{")
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_result(container)
         assert "result_raw" in result
         assert result["result_raw"] == "not json {{{"
 
     @pytest.mark.asyncio
-    @patch("tower.worker.MAX_RESULT_SIZE", 50)
+    @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
     async def test_oversized_returns_error(self):
         big = b"x" * 200
         tar_stream = _make_tar("result.json", big)
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_result(container)
         assert "error" in result
         assert "too large" in result["error"]
@@ -461,7 +461,7 @@ class TestExtractResult:
     async def test_get_archive_fails_returns_none(self):
         container = MagicMock()
         container.get_archive.side_effect = Exception("container gone")
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_result(container)
         assert result is None
 
@@ -478,18 +478,18 @@ class TestExtractStderr:
         tar_stream = _make_tar("stderr.log", b"some warning\n")
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_stderr(container)
         assert result == "some warning\n"
 
     @pytest.mark.asyncio
-    @patch("tower.worker.MAX_RESULT_SIZE", 50)
+    @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
     async def test_oversized_returns_none(self):
         big = b"x" * 200
         tar_stream = _make_tar("stderr.log", big)
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_stderr(container)
         assert result is None
 
@@ -497,7 +497,7 @@ class TestExtractStderr:
     async def test_get_archive_fails_returns_none(self):
         container = MagicMock()
         container.get_archive.side_effect = Exception("not found")
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_stderr(container)
         assert result is None
 
@@ -506,7 +506,7 @@ class TestExtractStderr:
         tar_stream = _make_tar("stderr.log", b"")
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_stderr(container)
         assert result is None
 
@@ -516,7 +516,7 @@ class TestExtractStderr:
         tar_stream = _make_tar("stderr.log", long_text.encode())
         container = MagicMock()
         container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
             result = await extract_stderr(container)
         assert len(result) == 2000
         assert result == "A" * 2000

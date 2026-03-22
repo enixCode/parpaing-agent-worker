@@ -233,10 +233,12 @@ agent-worker/
 │   ├── models.py          #   Request/response validation (Pydantic)
 │   ├── profiles.py        #   Profile loading and template rendering
 │   ├── engines.py         #   Engine loading and availability checks
-│   ├── pool.py            #   Warm container pool (DB-backed)
-│   ├── worker.py          #   Config injection and result extraction
-│   ├── job_store.py       #   PostgreSQL persistence with TTL cleanup
-│   └── job_runner.py      #   Background job execution and webhook dispatch
+│   ├── store/             #   Persistence layer
+│   │   ├── jobs.py        #     PostgreSQL persistence with TTL cleanup
+│   │   └── pool.py        #     Warm container pool (DB-backed)
+│   └── runner/            #   Execution layer
+│       ├── executor.py    #     Background job execution and webhook dispatch
+│       └── worker.py      #     Config injection and result extraction
 ├── worker/                # Agent container
 │   ├── Dockerfile         #   Node.js 22 + engine binaries (Claude Code, OpenCode)
 │   ├── entrypoint.sh      #   Waits for config injection, then runs job

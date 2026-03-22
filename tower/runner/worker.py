@@ -6,8 +6,8 @@ import json
 import logging
 import tarfile
 
-from .config import docker_client, HOOKS_DIR, MAX_RESULT_SIZE
-from .profiles import JobConfig
+from ..config import docker_client, HOOKS_DIR, MAX_RESULT_SIZE
+from ..profiles import JobConfig
 
 logger = logging.getLogger("tower.worker")
 

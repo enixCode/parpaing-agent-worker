@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Agent-worker is a Docker-based orchestration system. **Tower** (FastAPI) receives jobs, dispatches them to isolated **Worker** containers running AI coding agents, and returns results via an async job queue. Supports multiple engines (Claude Code, OpenCode) via TOML-based engine configs. No shared volumes - config is injected via `put_archive`, results are extracted via `get_archive`.
+**Parpaing** (`enixCode/parpaing-agent-worker`) is a Docker-based orchestration system. **Tower** (FastAPI) receives jobs, dispatches them to isolated **Worker** containers running AI coding agents, and returns results via an async job queue. Supports multiple engines (Claude Code, OpenCode) via TOML-based engine configs. No shared volumes - config is injected via `put_archive`, results are extracted via `get_archive`.
 
 ## Architecture
 
@@ -133,7 +133,9 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 
 Key directories (use `ls` for full listing):
 
-- `tower/` - Orchestrator (FastAPI): config, routes, models, engines, profiles, pool, worker, job_store, job_runner
+- `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles
+  - `tower/store/` - Persistence layer: jobs (job_store), pool (container pool)
+  - `tower/runner/` - Execution layer: executor (job_runner), worker (config injection/extraction)
 - `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
 - `engines/` - Engine configs (TOML) - one per AI tool
 - `profiles/` - Agent profiles (TOML) - define defaults per use case
@@ -248,7 +250,7 @@ run-job.sh (7 steps):
 - **Status enum**: `pending - running - completed | failed | cancelled`
 - **DB schema**: request stored as single JSONB column (not flattened into individual columns)
 - **Container pool**: DB-backed `containers` table, atomic acquire via `FOR UPDATE SKIP LOCKED`
-- **Logging**: per-module loggers (`tower`, `tower.job_runner`, `tower.worker`, `tower.job_store`, `tower.profiles`, `tower.engines`, `tower.pool`)
+- **Logging**: per-module loggers (`tower`, `tower.job_runner`, `tower.worker`, `tower.job_store`, `tower.profiles`, `tower.engines`, `tower.pool`) - logger names kept stable across refactors for log filtering compatibility
 - **Atomic DB updates**: `UPDATE WHERE status IN ('pending','running') RETURNING` prevents multi-tower race conditions
 - **Cancellation pattern**: DB state + `pool.release()` (kill + remove container)
 - **Graceful shutdown**: leaves running containers for re-adoption by other Towers
@@ -358,8 +360,8 @@ When modifying any code, ALWAYS update the related files to keep everything in s
 - **Env vars** added/changed - update `.env.example`, `config.py`, `docs/config.md`, `CLAUDE.md` (NOT docker-compose.yml - `env_file: .env` passes all vars automatically)
 - **API keys for new engines** - just add to `.env.example` + engine TOML `[env] auth` - pool reads engines dynamically
 - **Endpoints** added/changed - update `docs/api.md`, `CLAUDE.md`
-- **worker.py / job_store.py / pool.py** changed - check if `docs/` or `CLAUDE.md` need update
-- **worker/ (entrypoint.sh, run-job.sh, parse-job.js)** changed - verify tower/worker.py contract still matches
+- **tower/store/ or tower/runner/** changed - check if `docs/` or `CLAUDE.md` need update
+- **worker/ (entrypoint.sh, run-job.sh, parse-job.js)** changed - verify tower/runner/worker.py contract still matches
 - **Default values** changed - update `docs/request.md`, `docs/profiles.md`, `db/init.sql`
 - **Constants** (version, default model, timeouts) - update only in `config.py` (single source of truth)
 

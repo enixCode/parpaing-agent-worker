@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tower.job_store import Job, JobStatus, JobStore, _parse_json, _row_to_job
+from tower.store import Job, JobStatus, JobStore
+from tower.store.jobs import _parse_json, _row_to_job
 from tower.models import AgentRunRequest, JobResponse
 
 

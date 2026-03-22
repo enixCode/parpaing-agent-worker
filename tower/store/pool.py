@@ -7,7 +7,7 @@ import uuid
 import asyncpg
 import docker.errors
 
-from .config import (
+from ..config import (
     docker_client, WORKER_IMAGE, WORKER_NET,
     WORKER_MEM_LIMIT, WORKER_CPU_LIMIT, WORKER_RUNTIME,
     GATEWAY_URL, GATEWAY_CONTAINER,
