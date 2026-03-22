@@ -133,7 +133,7 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 
 Key directories (use `ls` for full listing):
 
-- `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles
+- `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles, metrics
   - `tower/store/` - Persistence layer: jobs (job_store), pool (container pool)
   - `tower/runner/` - Execution layer: executor (job_runner), worker (config injection/extraction)
 - `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
@@ -198,7 +198,7 @@ pytest tests/test_e2e_health.py        # run a single test file
 pytest tests/test_e2e_health.py -k "test_health"  # run a single test
 ```
 
-Unit tests cover: model validation, engine command building, profile variable validation, pool logic, job runner, worker helpers.
+Unit tests cover: model validation, engine command building, profile variable validation, pool logic, job runner (sanitization, output collection, webhooks, execution, recovery, cleanup), worker helpers (tar building, extraction, binary safety).
 
 E2E tests use `dry_run=True` to avoid spawning real Claude agents. Set `TOWER_URL` and `TOWER_API_KEY` env vars to test against a custom endpoint (defaults: `http://localhost:8420`, no auth). E2E tests cover: auth, concurrency, endpoints, health, job lifecycle, load, profiles, validation, wait.
 

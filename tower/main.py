@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
+from prometheus_client import generate_latest
 
 import httpx
 
@@ -22,6 +22,7 @@ from .runner import execute_job, recover_jobs, cleanup_loop
 from .models import JobCreateRequest, JobCreateResponse, JobResponse
 from .engines import list_engines as _list_engines, load_engine, is_engine_available
 from .profiles import list_profiles as _list_profiles, _load_profile
+from .metrics import JOBS_TOTAL, JOBS_ACTIVE, JOBS_BY_STATUS, POOL_READY, JOB_DURATION
 
 
 _log = logging.getLogger("tower")
@@ -35,13 +36,6 @@ logger = _log
 store = JobStore(dsn=DATABASE_URL, max_retained=MAX_RETAINED_JOBS, ttl_hours=JOB_TTL_HOURS)
 pool = ContainerPool()
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
-
-# --- Prometheus metrics ---
-JOBS_TOTAL = Counter("tower_jobs_total", "Total jobs created", ["profile"])
-JOBS_ACTIVE = Gauge("tower_jobs_active", "Currently running jobs")
-JOBS_BY_STATUS = Gauge("tower_jobs_by_status", "Jobs per status", ["status"])
-POOL_READY = Gauge("tower_pool_ready", "Warm containers ready in pool")
-JOB_DURATION = Histogram("tower_job_duration_seconds", "Job execution time", buckets=[5, 15, 30, 60, 120, 300, 600, 1800, 3600])
 
 _MAX_LIST_LIMIT = 200
 _WAIT_MAX_TIMEOUT = 7200

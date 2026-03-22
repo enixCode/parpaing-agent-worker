@@ -144,7 +144,7 @@ async def extract_result(container) -> dict | None:
         content, size = _extract_file_from_archive(stream)
         if size > MAX_RESULT_SIZE:
             return {"error": f"result.json too large ({size} bytes, max {MAX_RESULT_SIZE})"}
-        text = content.decode()
+        text = content.decode(errors="replace")
         try:
             return json.loads(text)
         except json.JSONDecodeError:

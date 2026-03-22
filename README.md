@@ -233,6 +233,7 @@ agent-worker/
 │   ├── models.py          #   Request/response validation (Pydantic)
 │   ├── profiles.py        #   Profile loading and template rendering
 │   ├── engines.py         #   Engine loading and availability checks
+│   ├── metrics.py         #   Prometheus metrics (shared across modules)
 │   ├── store/             #   Persistence layer
 │   │   ├── jobs.py        #     PostgreSQL persistence with TTL cleanup
 │   │   └── pool.py        #     Warm container pool (DB-backed)

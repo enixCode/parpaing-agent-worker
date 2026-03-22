@@ -465,6 +465,19 @@ class TestExtractResult:
             result = await extract_result(container)
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_binary_content_decoded_with_replace(self):
+        """Binary garbage in result.json should not crash - uses errors='replace'."""
+        binary_data = b"\x80\x81\x82\xff not json"
+        tar_stream = _make_tar("result.json", binary_data)
+        container = MagicMock()
+        container.get_archive.return_value = (tar_stream, None)
+        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
+            result = await extract_result(container)
+        # Should fallback to result_raw, not crash
+        assert result is not None
+        assert "result_raw" in result
+
 
 # ===========================================================================
 # 4. extract_stderr (async - mock Docker container)

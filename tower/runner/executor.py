@@ -104,15 +104,17 @@ async def _wait_and_finish(job_id: str, container_id: str, container,
         )
     except asyncio.TimeoutError:
         logger.warning("Job %s timed out after %ds", job_id, timeout)
-        await pool.release(container_id)
         await store.finish_job(
             job_id, JobStatus.FAILED,
             error=f"Timed out after {timeout}s",
         )
+        await pool.release(container_id)
         return
 
     exit_code = result.get("StatusCode", -1)
-    logs = (await asyncio.to_thread(container.logs)).decode(errors="replace")
+    logs = (await asyncio.wait_for(
+        asyncio.to_thread(container.logs), timeout=60,
+    )).decode(errors="replace")
     output = await _collect_output(job_id, container, exit_code, logs)
 
     updated = await _finish_and_webhook(job_id, output, store, webhook_url)
@@ -139,8 +141,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
             return
         logger.info("Job %s running", job_id)
 
-        # Lazy import to avoid circular dependency
-        from ..main import JOB_DURATION
+        from ..metrics import JOB_DURATION
 
         t0 = time.monotonic()
         container_id = None
@@ -188,20 +189,21 @@ async def recover_jobs(store: JobStore, semaphore: asyncio.Semaphore, pool: Cont
     if not running:
         return
 
+    async def _readopt(jid, cid):
+        async with semaphore:
+            await _readopt_container(jid, cid, store, pool)
+
     readopted, failed = 0, 0
     for job_id, container_id in running:
         if container_id:
             try:
-                get_container(container_id)
+                await asyncio.to_thread(get_container, container_id)
             except docker.errors.NotFound:
                 pass  # Container gone - mark failed below
             except Exception as e:
                 logger.warning("Recovery: Docker error for job %s, skipping: %s", job_id, e)
                 continue
             else:
-                async def _readopt(jid, cid):
-                    async with semaphore:
-                        await _readopt_container(jid, cid, store, pool)
                 asyncio.create_task(_readopt(job_id, container_id))
                 readopted += 1
                 continue
