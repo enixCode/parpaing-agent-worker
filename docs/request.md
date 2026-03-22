@@ -40,6 +40,15 @@ These settings are configured in profiles, not in the API request:
 | Pre-job hook | `[hooks] pre` | Script to run before claude |
 | Post-job hook | `[hooks] post` | Script to run after claude |
 
+## JobCreateResponse
+
+Returned by `POST /jobs` (HTTP 202).
+
+| Field | Type | Description |
+|---|---|---|
+| `job_id` | `string` | Unique job identifier (`{agent_id}-{12-char-hex}`) |
+| `status` | `string` | Always `pending` on creation |
+
 ## Examples
 
 Minimal request (Claude Code):

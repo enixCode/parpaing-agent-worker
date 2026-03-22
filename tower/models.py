@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field, field_validator
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
-_MAX_PROMPT_LEN = 100_000
-_MAX_SYSTEM_PROMPT_LEN = 50_000
+_MAX_PROMPT_LEN = 100_000_000
+_MAX_SYSTEM_PROMPT_LEN = 500_000
 
 # PostgreSQL JSONB rejects null bytes and bare surrogates
 _PG_UNSAFE = re.compile(r"[\x00\ud800-\udfff]")

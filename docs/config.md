@@ -5,42 +5,44 @@ All configuration is via environment variables in `.env`.
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `TOWER_PORT` | `8420` | Tower exposed port |
-| `TOWER_REPLICAS` | `1` | Number of Tower instances (horizontal scaling) |
-| `TOWER_API_KEY` | - | Bearer token for API auth (empty = no auth) |
-| `WORKER_IMAGE` | `agent-worker-worker` | Docker image name for worker containers |
-| `WORKER_RUNTIME` | - | gVisor runtime for kernel-level isolation (set to `runsc`) |
-| `ANTHROPIC_API_KEY` | - | API key (pay-per-token) |
-| `CLAUDE_CODE_OAUTH_TOKEN` | - | OAuth token (Pro/Max subscription) |
-| `OPENAI_API_KEY` | - | OpenAI API key (OpenCode engine) |
-| `DATABASE_URL` | `postgresql://tower:tower@db:5432/tower` | PostgreSQL connection string |
-| `POSTGRES_USER` | `tower` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | **required** | PostgreSQL password (no default) |
-| `POSTGRES_DB` | `tower` | PostgreSQL database |
-| `PROFILES_DIR` | `/app/profiles` | Path to TOML profiles directory |
-| `TEMPLATES_DIR` | `/app/templates` | Path to Jinja2 templates directory |
-| `HOOKS_DIR` | `/app/hooks` | Path to hook scripts directory |
-| `ENGINES_DIR` | `/app/engines` | Path to engine TOML configurations directory |
-| `MAX_CONCURRENT_JOBS` | `10` | Max parallel worker containers (per Tower instance) |
-| `JOB_TTL_HOURS` | `24` | Hours before finished jobs are cleaned up |
-| `MAX_RETAINED_JOBS` | `1000` | Max finished jobs kept in DB |
-| `WORKER_TIMEOUT_SECONDS` | `3600` | Default container timeout (1 hour) |
-| `WORKER_MEM_LIMIT` | `2g` | Default container memory limit |
-| `WORKER_CPU_LIMIT` | `1.0` | Default container CPU limit |
-| `MAX_RESULT_SIZE` | `10485760` | Max result.json size in bytes (10 MB default, prevents OOM) |
-| `POOL_SIZE` | `3` | Number of warm containers maintained in the pool |
-| `POOL_CHECK_INTERVAL` | `10` | Seconds between pool maintenance checks |
-| `POOL_MAX_IDLE` | `3600` | Max seconds a container stays idle before being recycled |
-| `CLEANUP_INTERVAL` | `600` | Seconds between job cleanup cycles |
-| `WEBHOOK_TIMEOUT` | `10` | HTTP timeout in seconds for webhook calls |
-| `DB_POOL_MIN_SIZE` | `2` | Minimum DB connections in asyncpg pool |
-| `DB_POOL_MAX_SIZE` | auto | Maximum DB connections in asyncpg pool (auto-sized to `MAX_CONCURRENT_JOBS * 2 + 5`) |
+| Variable | Default | Range | Description |
+|---|---|---|---|
+| `TOWER_PORT` | `8420` | - | Tower exposed port |
+| `TOWER_REPLICAS` | `1` | - | Number of Tower instances (horizontal scaling) |
+| `TOWER_API_KEY` | - | - | Bearer token for API auth (empty = no auth) |
+| `WORKER_IMAGE` | `agent-worker-worker` | - | Docker image name for worker containers |
+| `WORKER_RUNTIME` | - | - | gVisor runtime for kernel-level isolation (set to `runsc`) |
+| `WORKER_NET` | `agent-workers` | - | Docker network name for worker containers |
+| `ANTHROPIC_API_KEY` | - | - | API key (pay-per-token) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | - | - | OAuth token (Pro/Max subscription) |
+| `OPENAI_API_KEY` | - | - | OpenAI API key (OpenCode engine) |
+| `DATABASE_URL` | `postgresql://tower:tower@db:5432/tower` | - | PostgreSQL connection string |
+| `POSTGRES_USER` | `tower` | - | PostgreSQL user |
+| `POSTGRES_PASSWORD` | **required** | - | PostgreSQL password (no default) |
+| `POSTGRES_DB` | `tower` | - | PostgreSQL database |
+| `PROFILES_DIR` | `/app/profiles` | - | Path to TOML profiles directory |
+| `TEMPLATES_DIR` | `/app/templates` | - | Path to Jinja2 templates directory |
+| `HOOKS_DIR` | `/app/hooks` | - | Path to hook scripts directory |
+| `ENGINES_DIR` | `/app/engines` | - | Path to engine TOML configurations directory |
+| `UI_PATH` | `/app/ui/index.html` | - | Path to the dashboard HTML file |
+| `MAX_CONCURRENT_JOBS` | `10` | 1-100 | Max parallel worker containers (per Tower instance) |
+| `JOB_TTL_HOURS` | `24` | 1-720 | Hours before finished jobs are cleaned up |
+| `MAX_RETAINED_JOBS` | `1000` | 10-100000 | Max finished jobs kept in DB |
+| `WORKER_TIMEOUT_SECONDS` | `3600` | 10-86400 | Default container timeout in seconds |
+| `WORKER_MEM_LIMIT` | `2g` | - | Default container memory limit |
+| `WORKER_CPU_LIMIT` | `1.0` | 0.1-16.0 | Default container CPU limit |
+| `MAX_RESULT_SIZE` | `10485760` | 1024-104857600 | Max result.json size in bytes (10 MB default, 100 MB max) |
+| `POOL_SIZE` | `3` | 0-50 | Number of warm containers maintained in the pool |
+| `POOL_CHECK_INTERVAL` | `10` | 5-3600 | Seconds between pool maintenance checks |
+| `POOL_MAX_IDLE` | `3600` | 60-86400 | Max seconds a container stays idle before being recycled |
+| `CLEANUP_INTERVAL` | `600` | 60-86400 | Seconds between job cleanup cycles |
+| `WEBHOOK_TIMEOUT` | `10` | 1-60 | HTTP timeout in seconds for webhook calls |
+| `DB_POOL_MIN_SIZE` | `2` | 1-50 | Minimum DB connections in asyncpg pool |
+| `DB_POOL_MAX_SIZE` | auto | DB_POOL_MIN_SIZE-100 | Maximum DB connections (auto-sized to `max(10, MAX_CONCURRENT_JOBS * 2 + 5)`) |
+| `GATEWAY_URL` | `http://agent-gateway:4000` | - | LLM Gateway URL (validated against SSRF) |
+| `GATEWAY_CONTAINER` | `agent-gateway` | - | Gateway Docker container name |
 
 All numeric config values are auto-clamped to valid ranges at startup (see `tower/config.py`). Out-of-bounds values log a warning and are clamped to the nearest valid bound.
-| `WORKER_NET` | `agent-workers` | Docker network name for worker containers |
-| `UI_PATH` | `/app/ui/index.html` | Path to the dashboard HTML file |
 
 ## Tower API Authentication
 
@@ -128,11 +130,11 @@ Tower maintains a pool of warm worker containers, ready to execute jobs instantl
 
 ### Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `POOL_SIZE` | `3` | Target number of warm containers. Higher = lower latency, more resources |
-| `POOL_CHECK_INTERVAL` | `10` | Seconds between pool fill/prune checks |
-| `POOL_MAX_IDLE` | `3600` | Idle containers older than this are recycled (prevents staleness) |
+| Variable | Default | Range | Description |
+|---|---|---|---|
+| `POOL_SIZE` | `3` | 0-50 | Target number of warm containers. Higher = lower latency, more resources |
+| `POOL_CHECK_INTERVAL` | `10` | 5-3600 | Seconds between pool fill/prune checks |
+| `POOL_MAX_IDLE` | `3600` | 60-86400 | Idle containers older than this are recycled (prevents staleness) |
 
 ### Resource Usage
 
@@ -203,11 +205,12 @@ Worker Container                          Gateway (nginx:alpine)
 
 | Variable | Default | Description |
 |---|---|---|
-| `GATEWAY_URL` | `http://agent-gateway:4000` | Gateway URL |
+| `GATEWAY_URL` | `http://agent-gateway:4000` | Gateway URL (validated against SSRF at startup) |
 | `GATEWAY_CONTAINER` | `agent-gateway` | Gateway Docker container name |
 
 ### Security
 
+- `GATEWAY_URL` is validated at startup - only http/https schemes allowed, localhost and metadata IPs are blocked (SSRF protection)
 - `cap_drop=ALL` prevents workers from sniffing traffic on the shared network
 - The worker network is `internal=true` (no direct internet) with ICC disabled (workers can't see each other)
 - Workers only see placeholder API keys - real keys stay in the gateway container

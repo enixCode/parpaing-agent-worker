@@ -11,7 +11,7 @@ If `TOWER_API_KEY` is set, all endpoints except public paths require a bearer to
 Authorization: Bearer <TOWER_API_KEY>
 ```
 
-**Public paths** (no auth required): `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/ui`
+**Public paths** (no auth required): `/`, `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/ui`
 
 Returns `401` if the key is missing or invalid.
 
@@ -19,9 +19,13 @@ Returns `401` if the key is missing or invalid.
 
 ## Endpoints
 
+### GET /
+
+Redirects to `/ui` (dashboard).
+
 ### GET /health
 
-Deep health check - verifies DB connectivity, Docker socket, and container pool.
+Deep health check - verifies DB connectivity, Docker socket, container pool, and LLM gateway.
 
 **200** - all checks pass:
 ```json
@@ -30,7 +34,8 @@ Deep health check - verifies DB connectivity, Docker socket, and container pool.
   "checks": {
     "db": "ok",
     "docker": "ok",
-    "pool": "3 ready"
+    "pool": "3 ready",
+    "gateway": "ok"
   }
 }
 ```
@@ -42,7 +47,8 @@ Deep health check - verifies DB connectivity, Docker socket, and container pool.
   "checks": {
     "db": "unavailable",
     "docker": "ok",
-    "pool": "unknown"
+    "pool": "unknown",
+    "gateway": "unavailable"
   }
 }
 ```
@@ -71,7 +77,7 @@ Dashboard UI for monitoring jobs and managing the system. Serves a static HTML p
 
 ### GET /engines
 
-List available engines with availability status (checks if required auth env vars are set).
+List available engines with availability status. Engines are always marked as available since the LLM gateway handles authentication.
 
 **200:**
 ```json
@@ -81,15 +87,13 @@ List available engines with availability status (checks if required auth env var
       "id": "claude-code",
       "name": "Claude Code",
       "description": "Anthropic Claude Code CLI agent",
-      "available": true,
-      "env_auth": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
+      "available": true
     },
     {
       "id": "opencode",
       "name": "OpenCode",
       "description": "Terminal-based AI coding agent (by SST/Anomaly)",
-      "available": false,
-      "env_auth": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+      "available": true
     }
   ]
 }
@@ -231,7 +235,7 @@ Get a single job with full details.
 
 ### DELETE /jobs/{job_id}
 
-Cancel a pending or running job. Kills the container and releases it back to the pool if running.
+Cancel a pending or running job. Kills and removes the container if running (pool refills automatically).
 
 **200:**
 ```json

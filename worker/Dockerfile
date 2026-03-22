@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 
 # Engine: OpenCode
-RUN curl -fsSL https://opencode.ai/install | bash 2>/dev/null || true
+RUN curl -fsSL https://opencode.ai/install | bash \
+    && opencode version
 
 ENV CLAUDE_CODE_DISABLE_TELEMETRY=1
 ENV DISABLE_AUTOUPDATER=1

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banners/hero-banner.svg" alt="Parpaing" width="100%"/>
+  <img src="banners/hero-banner.svg" alt="Parpaing" width="100%"/>
 </p>
 
 <h1 align="center">Parpaing</h1>
@@ -10,12 +10,12 @@
 </p>
 
 <p align="center">
-  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker"/></a>
-  <a href="tower/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python"/></a>
-  <a href="tower/main.py"><img src="https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white" alt="FastAPI"/></a>
-  <a href="db/init.sql"><img src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL"/></a>
-  <a href="engines/"><img src="https://img.shields.io/badge/Multi--Engine-Claude_Code_%7C_OpenCode-cc785c?logo=anthropic&logoColor=white" alt="Engines"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker"><img src="https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white" alt="FastAPI"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker"><img src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker"><img src="https://img.shields.io/badge/Multi--Engine-Claude_Code_%7C_OpenCode-cc785c?logo=anthropic&logoColor=white" alt="Engines"/></a>
+  <a href="https://github.com/enixCode/parpaing-agent-worker/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License"/></a>
 </p>
 
 Send a prompt, get structured results. Parpaing handles container orchestration, job queuing, and result collection. Use it standalone or as the execution backend behind your own SaaS.
@@ -29,14 +29,14 @@ Send a prompt, get structured results. Parpaing handles container orchestration,
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="Architecture" width="100%"/>
+  <img src="architecture.svg" alt="Architecture" width="100%"/>
 </p>
 
 ## Quick Start
 
 ```bash
 cp .env.example .env
-# → set POSTGRES_PASSWORD and at least one engine auth key (see .env.example)
+# Set POSTGRES_PASSWORD and at least one engine auth key (see .env.example)
 
 docker compose up --build -d
 
@@ -45,7 +45,7 @@ open http://localhost:8420/ui
 ```
 
 <p align="center">
-  <img src="docs/assets/dashboard.png" alt="Dashboard" width="100%"/>
+  <img src="assets/dashboard.png" alt="Dashboard" width="100%"/>
 </p>
 
 ## Usage
@@ -65,7 +65,7 @@ r = requests.post(f"{API}/jobs", json={
 })
 job_id = r.json()["job_id"]
 
-# Wait for completion (blocks until done, timeout 1h)
+# Wait for completion (blocks until done, timeout 1h by default)
 result = requests.get(f"{API}/jobs/{job_id}/wait").json()
 print(result["status"])   # completed / failed
 print(result["result"])   # agent output
@@ -99,7 +99,7 @@ curl -X DELETE http://localhost:8420/jobs/$JOB_ID
 
 ## API
 
-See [docs/api.md](docs/api.md) for full reference and [docs/request.md](docs/request.md) for request fields.
+See [API Reference](api.md) for full reference and [Request Format](request.md) for request fields.
 
 Interactive docs available at [/docs](http://localhost:8420/docs) when running.
 
@@ -108,7 +108,7 @@ Interactive docs available at [/docs](http://localhost:8420/docs) when running.
 Profiles are reusable agent configurations in TOML. They define the model, tools, prompt template, hooks, and resource limits.
 
 <p align="center">
-  <img src="docs/assets/profiles.svg" alt="Profile System" width="100%"/>
+  <img src="assets/profiles.svg" alt="Profile System" width="100%"/>
 </p>
 
 | Profile | Purpose |
@@ -121,32 +121,27 @@ No profile needed for simple jobs - `default` is used automatically.
 
 Discover profiles and their variables via `GET /profiles`.
 
-See [`docs/profiles.md`](docs/profiles.md) and [`docs/templates.md`](docs/templates.md).
+See [Profiles](profiles.md) and [Templates](templates.md).
 
 ## Configuration
 
+All variables are read from `.env` (copy from `.env.example`). Only `POSTGRES_PASSWORD` is required - everything else has a working default.
+
+### Core
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WORKER_IMAGE` | `agent-worker-worker` | Worker Docker image |
-| `TOWER_API_KEY` | - | Bearer token for API auth |
-| `ANTHROPIC_API_KEY` | - | Anthropic API key (Claude Code / OpenCode) |
-| `CLAUDE_CODE_OAUTH_TOKEN` | - | Claude OAuth token (Pro/Max plan) |
-| `OPENAI_API_KEY` | - | OpenAI API key (OpenCode) |
-| `TOWER_REPLICAS` | `1` | Tower instances (Docker replicas) |
-| `MAX_CONCURRENT_JOBS` | `10` | Max parallel jobs per Tower |
-| `POOL_SIZE` | `3` | Warm containers in pool |
-| `WORKER_MEM_LIMIT` | `2g` | Memory per worker container |
-| `WORKER_CPU_LIMIT` | `1.0` | CPUs per worker container |
-| `WORKER_RUNTIME` | - | gVisor runtime (set to `runsc` for kernel-level isolation) |
-| `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration |
-| `GATEWAY_URL` | `http://agent-gateway:4000` | LLM Gateway URL - all LLM calls go through gateway, API keys never reach workers |
+| `POSTGRES_PASSWORD` | - | **Required.** PostgreSQL password |
+| `TOWER_PORT` | `8420` | Port exposed by the load balancer |
+| `TOWER_API_KEY` | - | Bearer token for API auth - empty means no auth |
+| `TOWER_REPLICAS` | `1` | Number of Tower instances (horizontal scaling) |
 
 ### Engine Authentication
 
 Parpaing handles orchestration, profiles, and infrastructure - you bring your own engine credentials.
 
-| Engine | Auth | Cost model |
-|--------|------|------------|
+| Engine | Auth variable(s) | Cost model |
+|--------|-----------------|------------|
 | **Claude Code** | `ANTHROPIC_API_KEY` (pay-per-token) or `CLAUDE_CODE_OAUTH_TOKEN` (Pro/Max subscription) | API usage or flat subscription |
 | **OpenCode** | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | API usage |
 
@@ -154,14 +149,63 @@ Parpaing handles orchestration, profiles, and infrastructure - you bring your ow
 
 ```bash
 claude set-token
-# Paste your OAuth token when prompted - it's stored for CLI use
-# Verify it works
-claude -p "hello"
+# Paste your OAuth token when prompted
+claude -p "hello"   # verify it works
 ```
 
 Then set `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. No per-token billing - you pay only your subscription.
 
-Check which engines are available: `GET /engines`.
+Check which engines are currently available: `GET /engines`.
+
+### Scaling and Concurrency
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_CONCURRENT_JOBS` | `10` | Max parallel jobs per Tower instance |
+| `POOL_SIZE` | `3` | Number of warm (pre-started) worker containers |
+| `POOL_CHECK_INTERVAL` | `10` | Pool maintenance interval in seconds |
+| `POOL_MAX_IDLE` | `3600` | Seconds before an idle container is recycled |
+
+### Worker Limits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKER_IMAGE` | `agent-worker-worker` | Docker image used for worker containers |
+| `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration before the container is killed |
+| `WORKER_MEM_LIMIT` | `2g` | Memory limit per worker container |
+| `WORKER_CPU_LIMIT` | `1.0` | CPU quota per worker container |
+| `WORKER_RUNTIME` | - | gVisor runtime for kernel-level isolation - set to `runsc` |
+| `WORKER_NET` | `agent-workers` | Docker network name for worker containers |
+
+### Job Retention
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JOB_TTL_HOURS` | `24` | Hours to keep finished jobs in the database |
+| `MAX_RETAINED_JOBS` | `1000` | Maximum number of finished jobs stored |
+| `CLEANUP_INTERVAL` | `600` | Seconds between job cleanup cycles |
+| `MAX_RESULT_SIZE` | `10485760` | Maximum size of a result payload in bytes (10 MB) |
+| `WEBHOOK_TIMEOUT` | `10` | HTTP timeout for outgoing webhook calls in seconds |
+
+### Network and Gateway
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GATEWAY_URL` | `http://agent-gateway:4000` | LLM Gateway URL - hides API keys from workers |
+| `GATEWAY_CONTAINER` | `agent-gateway` | Docker container name of the LLM gateway |
+
+### Database
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_USER` | `tower` | PostgreSQL user |
+| `POSTGRES_DB` | `tower` | PostgreSQL database name |
+| `DB_POOL_MIN_SIZE` | `2` | Minimum asyncpg connection pool size |
+| `DB_POOL_MAX_SIZE` | auto | Maximum asyncpg connection pool size (auto-sized to `MAX_CONCURRENT_JOBS * 2 + 5`) |
+
+All numeric config values are auto-clamped to valid ranges at startup. Out-of-bounds values log a warning and are clamped to the nearest valid bound.
+
+See [Configuration](config.md) for the full reference.
 
 ## Production
 
@@ -169,70 +213,81 @@ Set in `.env`:
 ```bash
 TOWER_API_KEY=your-strong-random-token
 POSTGRES_PASSWORD=strong-password
-WORKER_RUNTIME=runsc                   # optional: gVisor
+WORKER_RUNTIME=runsc                   # optional: gVisor kernel-level isolation
 ```
 
 Security hardening is always enabled: `cap_drop=ALL`, `no-new-privileges`, `pids_limit=100`, `ipc_mode=private`. Optional gVisor (`WORKER_RUNTIME=runsc`) adds kernel-level isolation.
 
-Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of Tower.
+Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of the load balancer.
+
+### LLM Gateway
+
+The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The worker network is `internal=true` so workers can only reach the gateway, not the internet directly.
 
 ## Project Structure
 
 ```
 agent-worker/
 ├── tower/                 # Orchestrator (FastAPI)
-│   ├── main.py            #   Routes, auth, health check
-│   ├── config.py          #   Environment variables
-│   ├── models.py          #   Request/response validation
-│   ├── profiles.py        #   Profile loading + template rendering
-│   ├── engines.py         #   Engine loading + availability
+│   ├── Dockerfile         #   Python 3.12 + dependencies
+│   ├── main.py            #   Routes, auth middleware, health check
+│   ├── config.py          #   Environment variables and defaults
+│   ├── models.py          #   Request/response validation (Pydantic)
+│   ├── profiles.py        #   Profile loading and template rendering
+│   ├── engines.py         #   Engine loading and availability checks
 │   ├── pool.py            #   Warm container pool (DB-backed)
-│   ├── worker.py          #   Config injection + result extraction
-│   ├── job_store.py       #   PostgreSQL persistence
-│   └── job_runner.py      #   Job execution + webhook
+│   ├── worker.py          #   Config injection and result extraction
+│   ├── job_store.py       #   PostgreSQL persistence with TTL cleanup
+│   └── job_runner.py      #   Background job execution and webhook dispatch
 ├── worker/                # Agent container
 │   ├── Dockerfile         #   Node.js 22 + engine binaries (Claude Code, OpenCode)
-│   ├── entrypoint.sh      #   Waits for config, runs job
-│   ├── run-job.sh         #   Hooks + engine execution
-│   └── parse-job.js       #   JSON → shell variables
+│   ├── entrypoint.sh      #   Waits for config injection, then runs job
+│   ├── run-job.sh         #   Engine-agnostic execution (hooks + CLI + result)
+│   └── parse-job.js       #   Translates job.json to shell variables
+├── lb/                    # Load balancer (nginx round-robin)
+├── gateway/               # LLM Gateway (nginx - hides API keys)
 ├── profiles/              # Agent profiles (TOML)
 ├── templates/             # Jinja2 templates (prompts, agent instructions)
 ├── hooks/                 # Pre/post hook scripts
+├── engines/               # Engine configs (TOML - one per AI tool)
 ├── db/                    # PostgreSQL schema
-├── tests/                 # E2E tests
-├── docs/                  # Documentation
-├── ui/                    # Web dashboard
-└── docker-compose.yml
+├── tests/                 # Unit (7 files) and E2E tests (9 files)
+├── docs/                  # Documentation and assets
+├── ui/                    # Web dashboard (single HTML file)
+├── docker-compose.yml
+└── docker-compose.prod.yml # Production variant (pre-built images)
 ```
 
 ## Scaling
 
 ```bash
-# Multiple Tower instances
+# Run multiple Tower instances - all share the same PostgreSQL database
 TOWER_REPLICAS=3 docker compose up -d
 
-# All replicas share PostgreSQL - any Tower can serve any job
-# Container pool is DB-backed - atomic acquire, no race conditions
-# Cancel works cross-instance via Docker socket
+# Any Tower instance can serve any job
+# Container pool is DB-backed - atomic acquire with no race conditions
+# Cancel works cross-instance via the Docker socket
 ```
 
 ## Roadmap
 
-- [ ] **Profiles, prompts & hooks in DB** - manage via API instead of TOML files
+Items are roughly ordered by priority. Contributions are welcome.
 
-- [ ] **Multi-tenant auth** - users, orgs, quotas, scoped API keys
+- [ ] **Profiles, prompts and hooks in DB** - manage profiles and templates via the API instead of TOML files on disk; enables dynamic configuration without container restarts
 
-- [ ] **File upload** - inject files into `/workspace` via API
+- [ ] **Multi-tenant auth** - user accounts, organizations, quotas, and scoped API keys; foundation for running Parpaing as a shared service
 
-- [ ] **More engines** - Codex, Gemini CLI, Aider, etc.
+- [ ] **File upload** - inject arbitrary files into `/workspace` via the API before a job runs; enables code review, document processing, and other file-based workflows
 
-- [ ] **WebSocket push** - real-time status changes without polling
+- [ ] **More engines** - add support for Codex CLI, Gemini CLI, Aider, and other coding agents; each engine is a single TOML file
 
-- [ ] **Cost tracking** - tokens & USD per job, aggregated metrics
+- [ ] **WebSocket push** - real-time job status updates without client-side polling; reduces latency for interactive use cases
 
-- [ ] **Scheduling** - cron / recurring jobs
+- [ ] **Cost tracking** - record token counts and estimated USD cost per job; expose aggregated metrics per agent, profile, and time window
 
-- [ ] **CI/CD** - automated build, test, deploy pipeline
+- [ ] **Scheduling** - cron expressions and recurring jobs; run agents on a schedule without external orchestration
+
+- [ ] **CI/CD pipeline** - automated build, test, and image publish workflow; includes Docker image versioning and release automation
 
 ## License
 

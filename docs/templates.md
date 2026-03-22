@@ -31,7 +31,7 @@ Variables come from `[prompt.variables]` in the profile, merged with `prompt_var
 
 | Variable | Required | Default |
 |----------|----------|---------|
-| `task` | no | Analyse le code dans /workspace... |
+| `task` | no | `Analyse le projet` (profile default) |
 
 ### prompts/code-review.md.j2
 
@@ -46,10 +46,10 @@ Vérifier les tests existants - lancer `{{ test_command | default("npm test || p
 
 | Variable | Required | Default |
 |----------|----------|---------|
-| `repo_url` | no | - |
-| `focus` | no | - |
+| `repo_url` | yes | `https://github.com/org/repo` |
+| `focus` | no | `security, performance` |
 | `test_command` | no | `npm test \|\| pytest \|\| go test ./...` |
-| `branch` | no | - |
+| `branch` | no | `main` |
 
 ### prompts/researcher.md.j2
 
@@ -62,9 +62,9 @@ Recherche approfondie : {{ query | default("Analyse le sujet fourni") }}
 
 | Variable | Required | Default |
 |----------|----------|---------|
-| `query` | no | Analyse le sujet fourni |
-| `criteria` | no | - |
-| `context` | no | - |
+| `query` | yes | `Trouver le meilleur framework pour...` |
+| `criteria` | no | `Open source, actif, bonne doc` |
+| `context` | no | `Projet web moderne` |
 
 ## CLAUDE.md Template
 
@@ -101,15 +101,41 @@ Tu es un agent autonome dans un container Docker isolé.
 {% endif %}
 ```
 
-| Variable | Required | Default |
-|----------|----------|---------|
-| `role` | no | - |
-| `guidelines` | no | - |
-| `constraints` | no | - |
-| `output_instructions` | no | - |
-| `timeout` | no | `3600` |
-| `mem_limit` | no | `512m` |
-| `cpu_limit` | no | `2.0` |
+| Variable | Required | Default | Source |
+|----------|----------|---------|-------|
+| `role` | no | - | `[claude_md.variables]` in profile |
+| `guidelines` | no | - | `[claude_md.variables]` in profile |
+| `constraints` | no | - | `[claude_md.variables]` in profile |
+| `output_instructions` | no | - | `[claude_md.variables]` in profile |
+| `timeout` | no | `3600` | Auto-injected from `[resources].timeout` or `WORKER_TIMEOUT_SECONDS` |
+| `mem_limit` | no | `2g` | Auto-injected from `WORKER_MEM_LIMIT` |
+| `cpu_limit` | no | `1.0` | Auto-injected from `WORKER_CPU_LIMIT` |
+
+`timeout`, `mem_limit`, and `cpu_limit` are auto-injected by `profiles.py` using `setdefault` before rendering. They reflect the actual config values (from `config.py` or the profile's `[resources].timeout`), so the template always shows accurate limits. The Jinja2 `| default()` filters are only fallbacks if injection is bypassed. Request-level `claude_md_vars` can override them.
+
+## Variable Definitions
+
+Profile variables support two formats:
+
+**Typed format** (recommended) - supports validation, defaults, required flag, allowed values, and description:
+
+```toml
+[prompt.variables.repo_url]
+type = "string"          # string | integer | float | boolean
+default = "https://github.com/org/repo"
+required = true
+description = "Git repository URL to clone and review"
+enum = ["val1", "val2"]  # optional - restricts allowed values
+```
+
+**Legacy format** - plain key/value, value is used as the default:
+
+```toml
+[prompt.variables]
+my_var = "default value"
+```
+
+Both formats work. Typed definitions are validated by `_validate_vars()` in `profiles.py`. Extra variables provided in the request but not defined in the profile are passed through to the template (flexible).
 
 ## Creating a New Template
 
@@ -120,8 +146,10 @@ Tu es un agent autonome dans un container Docker isolé.
 [prompt]
 template = "prompts/my-template.md.j2"
 
-[prompt.variables]
-my_var = "value"
+[prompt.variables.my_var]
+type = "string"
+default = "value"
+description = "What this variable does"
 
 [claude_md]
 template = "claude-md/agent-base.md.j2"

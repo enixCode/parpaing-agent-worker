@@ -77,6 +77,5 @@ def list_engines() -> list[dict]:
                     "name": cfg.name,
                     "description": cfg.description,
                     "available": is_engine_available(cfg),
-                    "env_auth": cfg.env_auth,
                 })
     return engines
