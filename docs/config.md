@@ -11,7 +11,7 @@ All configuration is via environment variables in `.env`.
 | `TOWER_REPLICAS` | `1` | Number of Tower instances (horizontal scaling) |
 | `TOWER_API_KEY` | - | Bearer token for API auth (empty = no auth) |
 | `WORKER_IMAGE` | `agent-worker-worker` | Docker image name for worker containers |
-| `WORKER_HARDENED` | `false` | Enable worker hardening (read_only, cap_drop, no-new-privileges, pids_limit) |
+| `WORKER_RUNTIME` | - | gVisor runtime for kernel-level isolation (set to `runsc`) |
 | `ANTHROPIC_API_KEY` | - | API key (pay-per-token) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | - | OAuth token (Pro/Max subscription) |
 | `OPENAI_API_KEY` | - | OpenAI API key (OpenCode engine) |
@@ -27,7 +27,7 @@ All configuration is via environment variables in `.env`.
 | `JOB_TTL_HOURS` | `24` | Hours before finished jobs are cleaned up |
 | `MAX_RETAINED_JOBS` | `1000` | Max finished jobs kept in DB |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Default container timeout (1 hour) |
-| `WORKER_MEM_LIMIT` | `512m` | Default container memory limit |
+| `WORKER_MEM_LIMIT` | `2g` | Default container memory limit |
 | `WORKER_CPU_LIMIT` | `1.0` | Default container CPU limit |
 | `MAX_RESULT_SIZE` | `10485760` | Max result.json size in bytes (10 MB default, prevents OOM) |
 | `POOL_SIZE` | `3` | Number of warm containers maintained in the pool |
@@ -136,16 +136,19 @@ Tower maintains a pool of warm worker containers, ready to execute jobs instantl
 
 Each warm container consumes `WORKER_MEM_LIMIT` memory and `WORKER_CPU_LIMIT` CPU. Total pool overhead = `POOL_SIZE × resources`.
 
-## Worker Hardening
+## Worker Security
 
-Set `WORKER_HARDENED=true` in production to enable container security:
+Security hardening is **always enabled** on all worker containers:
 
-- `read_only=True` root filesystem (tmpfs for writable paths)
 - `cap_drop=["ALL"]` - no Linux capabilities
 - `no-new-privileges:true` - prevent privilege escalation
-- PID limit 256 - prevents fork bombs
+- PID limit 100 - prevents fork bombs
+- `ipc_mode="private"` - isolated IPC namespace
+- Memory and CPU limits (configurable)
+- Internal network only (no direct internet access)
+- ICC disabled (workers can't see each other)
 
-When `WORKER_HARDENED=false` (default), containers run without these restrictions (useful for development).
+For additional kernel-level isolation, set `WORKER_RUNTIME=runsc` (requires gVisor installed on the host).
 
 ## Worker Hooks (Optional)
 

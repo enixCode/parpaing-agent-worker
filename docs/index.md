@@ -135,9 +135,9 @@ See [`docs/profiles.md`](docs/profiles.md) and [`docs/templates.md`](docs/templa
 | `TOWER_REPLICAS` | `1` | Tower instances (Docker replicas) |
 | `MAX_CONCURRENT_JOBS` | `10` | Max parallel jobs per Tower |
 | `POOL_SIZE` | `3` | Warm containers in pool |
-| `WORKER_MEM_LIMIT` | `512m` | Memory per worker container |
+| `WORKER_MEM_LIMIT` | `2g` | Memory per worker container |
 | `WORKER_CPU_LIMIT` | `1.0` | CPUs per worker container |
-| `WORKER_HARDENED` | `false` | Container hardening (read_only, cap_drop, pids_limit) |
+| `WORKER_RUNTIME` | - | gVisor runtime (set to `runsc` for kernel-level isolation) |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration |
 | `GATEWAY_URL` | `http://agent-gateway:4000` | LLM Gateway URL - all LLM calls go through gateway, API keys never reach workers |
 
@@ -169,10 +169,10 @@ Set in `.env`:
 ```bash
 TOWER_API_KEY=your-strong-random-token
 POSTGRES_PASSWORD=strong-password
-WORKER_HARDENED=true
+WORKER_RUNTIME=runsc                   # optional: gVisor
 ```
 
-Hardening enables: `read_only` root filesystem, `cap_drop=ALL`, `no-new-privileges`, `pids_limit=256`, tmpfs mounts.
+Security hardening is always enabled: `cap_drop=ALL`, `no-new-privileges`, `pids_limit=100`, `ipc_mode=private`. Optional gVisor (`WORKER_RUNTIME=runsc`) adds kernel-level isolation.
 
 Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of Tower.
 

@@ -172,9 +172,9 @@ Check which engines are currently available: `GET /engines`.
 |----------|---------|-------------|
 | `WORKER_IMAGE` | `agent-worker-worker` | Docker image used for worker containers |
 | `WORKER_TIMEOUT_SECONDS` | `3600` | Max job duration before the container is killed |
-| `WORKER_MEM_LIMIT` | `512m` | Memory limit per worker container |
+| `WORKER_MEM_LIMIT` | `2g` | Memory limit per worker container |
 | `WORKER_CPU_LIMIT` | `1.0` | CPU quota per worker container |
-| `WORKER_HARDENED` | `false` | Enable container hardening (read-only FS, cap_drop, pids_limit) |
+| `WORKER_RUNTIME` | - | gVisor runtime for kernel-level isolation - set to `runsc` |
 | `WORKER_NET` | `agent-workers` | Docker network name for worker containers |
 
 ### Job Retention
@@ -209,10 +209,10 @@ Set in `.env`:
 ```bash
 TOWER_API_KEY=your-strong-random-token
 POSTGRES_PASSWORD=strong-password
-WORKER_HARDENED=true
+WORKER_RUNTIME=runsc                   # optional: gVisor kernel-level isolation
 ```
 
-Hardening enables: `read_only` root filesystem, `cap_drop=ALL`, `no-new-privileges`, `pids_limit=256`, tmpfs mounts.
+Security hardening is always enabled: `cap_drop=ALL`, `no-new-privileges`, `pids_limit=100`, `ipc_mode=private`. Optional gVisor (`WORKER_RUNTIME=runsc`) adds kernel-level isolation.
 
 Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of the load balancer.
 
@@ -225,6 +225,7 @@ The gateway is an nginx reverse proxy that sits between worker containers and LL
 ```
 agent-worker/
 ├── tower/                 # Orchestrator (FastAPI)
+│   ├── Dockerfile         #   Python 3.12 + dependencies
 │   ├── main.py            #   Routes, auth middleware, health check
 │   ├── config.py          #   Environment variables and defaults
 │   ├── models.py          #   Request/response validation (Pydantic)
@@ -239,16 +240,18 @@ agent-worker/
 │   ├── entrypoint.sh      #   Waits for config injection, then runs job
 │   ├── run-job.sh         #   Engine-agnostic execution (hooks + CLI + result)
 │   └── parse-job.js       #   Translates job.json to shell variables
-├── gateway/               # LLM Gateway (nginx)
+├── lb/                    # Load balancer (nginx round-robin)
+├── gateway/               # LLM Gateway (nginx - hides API keys)
 ├── profiles/              # Agent profiles (TOML)
 ├── templates/             # Jinja2 templates (prompts, agent instructions)
 ├── hooks/                 # Pre/post hook scripts
 ├── engines/               # Engine configs (TOML - one per AI tool)
 ├── db/                    # PostgreSQL schema
-├── tests/                 # Unit and E2E tests
+├── tests/                 # Unit (7 files) and E2E tests (9 files)
 ├── docs/                  # Documentation and assets
 ├── ui/                    # Web dashboard (single HTML file)
-└── docker-compose.yml
+├── docker-compose.yml
+└── docker-compose.prod.yml # Production variant (pre-built images)
 ```
 
 ## Scaling

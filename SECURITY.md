@@ -17,15 +17,17 @@ If you discover a security vulnerability, please report it responsibly:
 - **Workers** run in isolated Docker containers, destroyed after each job
 - **No shared volumes** between Tower and workers - config is injected via `put_archive`, results extracted via `get_archive`
 
-### Hardening (`WORKER_HARDENED=true`)
+### Container Hardening (always enabled)
 
-When enabled, worker containers run with:
+All worker containers run with security hardening:
 
-- `read_only=True` root filesystem (writable tmpfs only)
 - `cap_drop=["ALL"]` - no Linux capabilities
-- `no-new-privileges` security option
-- `pids_limit=256` - fork bomb protection
-- Size-limited tmpfs mounts (`/home/agent` 1G, `/tmp` 512M, `/output` 256M)
+- `no-new-privileges:true` - prevent privilege escalation
+- `pids_limit=100` - fork bomb protection
+- `ipc_mode="private"` - isolated IPC namespace
+- Internal network only (no direct internet access)
+- ICC disabled (workers can't see each other)
+- Optional gVisor kernel-level isolation via `WORKER_RUNTIME=runsc`
 
 ### API Authentication
 
