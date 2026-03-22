@@ -252,10 +252,18 @@ class ContainerPool:
         # Connect gateway container to worker network
         await self._connect_container(GATEWAY_CONTAINER)
 
-        await self._pool.execute(
-            "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
-            container.id, self._network_id, status,
-        )
+        try:
+            await self._pool.execute(
+                "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
+                container.id, self._network_id, status,
+            )
+        except Exception:
+            logger.exception("Failed to register container %s, destroying orphan", container.id[:12])
+            try:
+                await asyncio.to_thread(container.remove, force=True)
+            except Exception:
+                logger.warning("Failed to cleanup orphaned container %s", container.id[:12])
+            raise
         return container.id
 
     async def _connect_container(self, container_name: str):

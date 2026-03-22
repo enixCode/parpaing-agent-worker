@@ -42,6 +42,9 @@ All worker containers run with security hardening:
 - **Input validation**: Agent ID, profile, and plugin names restricted to `^[a-zA-Z0-9_-]{1,64}$`
 - **Error sanitization**: Internal paths and Docker details stripped from error responses
 - **Result size limits**: `MAX_RESULT_SIZE` prevents oversized container output from causing OOM
+- **XSS prevention**: Dashboard uses `escapeHtml()` for user-controlled content, API key stored in sessionStorage (not localStorage)
+- **Null-byte stripping**: Worker `parse-job.js` strips null bytes and truncates oversized shell arguments
+- **Config clamping**: All numeric env vars are auto-clamped to valid ranges at startup, preventing misconfiguration
 
 ## Supported Versions
 

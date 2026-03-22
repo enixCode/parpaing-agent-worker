@@ -36,7 +36,9 @@ All configuration is via environment variables in `.env`.
 | `CLEANUP_INTERVAL` | `600` | Seconds between job cleanup cycles |
 | `WEBHOOK_TIMEOUT` | `10` | HTTP timeout in seconds for webhook calls |
 | `DB_POOL_MIN_SIZE` | `2` | Minimum DB connections in asyncpg pool |
-| `DB_POOL_MAX_SIZE` | `10` | Maximum DB connections in asyncpg pool |
+| `DB_POOL_MAX_SIZE` | auto | Maximum DB connections in asyncpg pool (auto-sized to `MAX_CONCURRENT_JOBS * 2 + 5`) |
+
+All numeric config values are auto-clamped to valid ranges at startup (see `tower/config.py`). Out-of-bounds values log a warning and are clamped to the nearest valid bound.
 | `WORKER_NET` | `agent-workers` | Docker network name for worker containers |
 | `UI_PATH` | `/app/ui/index.html` | Path to the dashboard HTML file |
 

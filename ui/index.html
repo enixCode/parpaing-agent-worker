@@ -633,10 +633,10 @@ let detailRefreshTimer = null;
 let firstLoad = true;
 
 // --- API Key persistence ---
-const savedKey = localStorage.getItem('parpaing_api_key');
+const savedKey = sessionStorage.getItem('parpaing_api_key');
 if (savedKey) document.getElementById('apiKey').value = savedKey;
 document.getElementById('apiKey').addEventListener('change', (e) => {
-  localStorage.setItem('parpaing_api_key', e.target.value);
+  sessionStorage.setItem('parpaing_api_key', e.target.value);
 });
 
 // --- Health ---
@@ -915,7 +915,7 @@ function renderMarkdown(md) {
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
     if (/^https?:\/\//i.test(url)) {
-      return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+      return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${text}</a>`;
     }
     return text;
   });
@@ -991,7 +991,7 @@ function renderDetail(job) {
   if (chatText) {
     chatViewer.innerHTML = renderMarkdown(chatText);
   } else if (job.status === 'pending' || job.status === 'running') {
-    chatViewer.innerHTML = '<span class="chat-empty">// ' + job.status + ' - awaiting response</span>';
+    chatViewer.innerHTML = '<span class="chat-empty">// ' + escapeHtml(job.status) + ' - awaiting response</span>';
   } else {
     chatViewer.innerHTML = '<span class="chat-empty">// no response</span>';
   }

@@ -22,7 +22,7 @@ Send a prompt, get structured results. Parpaing handles container orchestration,
 
 > **Status: MVP** - Core features work (job queue, container pool, dashboard, multi-engine). Not production-hardened yet. See [Roadmap](#roadmap) for what's planned.
 >
-> **What works:** create/poll/cancel/wait jobs, profiles, web dashboard, multi-tower scaling.
+> **What works:** create/poll/cancel/wait jobs, profiles, web dashboard, multi-tower scaling, Prometheus metrics, LLM gateway.
 >
 > **What's missing for production:** multi-tenant auth, rate limiting, file upload, cost tracking, CI/CD.
 

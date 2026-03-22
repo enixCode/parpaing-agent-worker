@@ -201,7 +201,9 @@ Check which engines are currently available: `GET /engines`.
 | `POSTGRES_USER` | `tower` | PostgreSQL user |
 | `POSTGRES_DB` | `tower` | PostgreSQL database name |
 | `DB_POOL_MIN_SIZE` | `2` | Minimum asyncpg connection pool size |
-| `DB_POOL_MAX_SIZE` | `10` | Maximum asyncpg connection pool size |
+| `DB_POOL_MAX_SIZE` | auto | Maximum asyncpg connection pool size (auto-sized to `MAX_CONCURRENT_JOBS * 2 + 5`) |
+
+All numeric config values are auto-clamped to valid ranges at startup. Out-of-bounds values log a warning and are clamped to the nearest valid bound.
 
 ## Production
 

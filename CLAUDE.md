@@ -69,7 +69,7 @@ Pool Maintainer (background task)        Tower (job dispatch)
   │                                        │ - pool refills automatically
 ```
 
-Acquire uses `FOR UPDATE SKIP LOCKED` - multi-tower safe, no race conditions.
+Acquire uses `FOR UPDATE SKIP LOCKED` - multi-tower safe, no race conditions. Orphan protection: if DB registration fails after container creation, the container is force-removed.
 
 ### Job State Machine
 
@@ -131,87 +131,21 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 
 ## File Structure
 
-```
-agent-worker/
-├── db/                    <- PostgreSQL schema
-│   └── init.sql           <- jobs + containers tables
-├── gateway/               <- LLM Gateway (nginx reverse proxy)
-│   └── gateway.conf.template <- nginx template (envsubst)
-├── lb/                    <- Load balancer (nginx round-robin)
-│   └── nginx.conf         <- Upstream config + SSE support
-├── docs/                  <- Documentation (mkdocs)
-│   ├── index.md           <- Home page (mirrors README)
-│   ├── api.md
-│   ├── request.md
-│   ├── profiles.md
-│   ├── templates.md
-│   ├── config.md
-│   ├── architecture.svg   <- Architecture diagram
-│   ├── assets/
-│   │   ├── dashboard.png
-│   │   └── profiles.svg
-│   └── banners/
-│       └── hero-banner.svg
-├── engines/               <- Engine configs (TOML) - one per AI tool
-│   ├── claude-code.toml   <- Anthropic Claude Code CLI
-│   └── opencode.toml      <- OpenCode (SST/Anomaly)
-├── profiles/              <- Agent profiles (TOML)
-│   ├── default.toml
-│   ├── code-review.toml
-│   └── researcher.toml
-├── templates/             <- Jinja2 templates
-│   ├── prompts/           <- Prompt templates (.md.j2)
-│   │   ├── default.md.j2
-│   │   ├── researcher.md.j2
-│   │   └── code-review.md.j2
-│   └── claude-md/         <- CLAUDE.md templates
-│       └── agent-base.md.j2
-├── hooks/                 <- Worker hook scripts (optional)
-│   ├── pre-job.example.sh <- Example pre-job hook
-│   └── post-job.example.sh <- Example post-job hook
-├── tower/                 <- Orchestrator (FastAPI)
-│   ├── Dockerfile         <- Python 3.12 + dependencies
-│   ├── requirements.txt   <- Python dependencies
-│   ├── config.py          <- Env vars, Docker client, pool config
-│   ├── main.py            <- App + routes (health, /jobs CRUD, /engines)
-│   ├── models.py          <- Pydantic models (request/response)
-│   ├── engines.py         <- Engine loading + availability checking
-│   ├── profiles.py        <- Profile loading, template rendering, config resolution
-│   ├── pool.py            <- Container pool (warm containers, DB-backed)
-│   ├── worker.py          <- Config injection (put_archive), result extraction (get_archive)
-│   ├── job_store.py       <- PostgreSQL job store with TTL cleanup
-│   └── job_runner.py      <- Background job execution + webhook
-├── ui/                    <- Web dashboard (single HTML file)
-│   └── index.html         <- Dashboard: job list, create, cancel
-├── worker/                <- Agent container
-│   ├── Dockerfile         <- Node.js 22 + engine binaries
-│   ├── entrypoint.sh      <- Waits for config injection, then exec run-job.sh
-│   ├── run-job.sh         <- Engine-agnostic job execution (hooks + CLI + result)
-│   └── parse-job.js       <- Parse job.json + engine config - shell variables
-├── tests/                 <- Test suite
-│   ├── conftest.py        <- E2E test fixtures
-│   ├── unit/              <- Unit tests (no Docker required)
-│   │   ├── test_models.py
-│   │   ├── test_engines.py
-│   │   ├── test_profiles.py
-│   │   ├── test_pool.py
-│   │   ├── test_job_runner.py
-│   │   ├── test_job_store.py
-│   │   └── test_worker.py
-│   ├── test_e2e_auth.py
-│   ├── test_e2e_concurrency.py
-│   ├── test_e2e_endpoints.py
-│   ├── test_e2e_health.py
-│   ├── test_e2e_job_lifecycle.py
-│   ├── test_e2e_load.py
-│   ├── test_e2e_profile.py
-│   ├── test_e2e_validation.py
-│   └── test_e2e_wait.py
-├── docker-compose.yml
-├── docker-compose.prod.yml <- Production variant (pre-built images)
-├── mkdocs.yml             <- Documentation site config
-└── .env.example
-```
+Key directories (use `ls` for full listing):
+
+- `tower/` - Orchestrator (FastAPI): config, routes, models, engines, profiles, pool, worker, job_store, job_runner
+- `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
+- `engines/` - Engine configs (TOML) - one per AI tool
+- `profiles/` - Agent profiles (TOML) - define defaults per use case
+- `templates/` - Jinja2 templates: `prompts/` (.md.j2) and `claude-md/` (.md.j2)
+- `hooks/` - Worker hook scripts (optional, per-profile)
+- `db/` - PostgreSQL schema (init.sql: jobs + containers tables)
+- `gateway/` - LLM Gateway (nginx reverse proxy, hides API keys)
+- `lb/` - Load balancer (nginx round-robin to Tower replicas)
+- `ui/` - Web dashboard (single HTML file)
+- `docs/` - Documentation (mkdocs)
+- `tests/unit/` - Unit tests (no Docker required)
+- `tests/test_e2e_*.py` - E2E tests (requires docker compose up)
 
 ## Commands
 
@@ -324,6 +258,8 @@ run-job.sh (7 steps):
 
 ## Key Environment Variables
 
+Essential vars (see `.env.example` for the full list with defaults):
+
 | Variable | Purpose |
 |---|---|
 | `TOWER_PORT` | Tower exposed port (default: 8420) |
@@ -331,34 +267,12 @@ run-job.sh (7 steps):
 | `TOWER_API_KEY` | Bearer token for API auth (empty = no auth) |
 | `ANTHROPIC_API_KEY` | API key (pay-per-token) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token (Pro/Max subscription) |
-| `WORKER_IMAGE` | Docker image name for worker |
-| `ENGINES_DIR` | Path to engine TOML configs (default: `/app/engines`) |
-| `GATEWAY_URL` | LLM Gateway URL (default: http://agent-gateway:4000) |
-| `GATEWAY_CONTAINER` | Gateway Docker container name (default: agent-gateway) |
-| `MAX_RESULT_SIZE` | Max result.json size in bytes (default: 10 MB) |
 | `MAX_CONCURRENT_JOBS` | Max parallel containers per Tower instance (default: 10) |
-| `JOB_TTL_HOURS` | Hours to keep finished jobs (default: 24) |
-| `MAX_RETAINED_JOBS` | Max finished jobs in DB (default: 1000) |
-| `WORKER_TIMEOUT_SECONDS` | Max worker container runtime (default: 3600) |
-| `WORKER_MEM_LIMIT` | Worker memory limit (default: 2g) |
-| `WORKER_CPU_LIMIT` | Worker CPU limit (default: 1.0) |
-| `WORKER_RUNTIME` | gVisor runtime for kernel-level isolation - set to "runsc" (default: empty) |
 | `POOL_SIZE` | Warm containers in pool (default: 3) |
-| `POOL_CHECK_INTERVAL` | Pool maintenance interval in seconds (default: 10) |
-| `POOL_MAX_IDLE` | Max idle time before container recycling (default: 3600) |
-| `CLEANUP_INTERVAL` | Seconds between job cleanup cycles (default: 600) |
-| `WEBHOOK_TIMEOUT` | HTTP timeout for webhook calls in seconds (default: 10) |
-| `DB_POOL_MIN_SIZE` | Minimum asyncpg connections (default: 2) |
-| `DB_POOL_MAX_SIZE` | Maximum asyncpg connections (default: 10) |
-| `WORKER_NET` | Docker network name for worker containers (default: agent-workers) |
-| `UI_PATH` | Path to dashboard HTML file (default: /app/ui/index.html) |
-| `PROFILES_DIR` | Path to profile TOML configs (default: `/app/profiles`) |
-| `TEMPLATES_DIR` | Path to Jinja2 templates (default: `/app/templates`) |
-| `HOOKS_DIR` | Path to hook scripts (default: `/app/hooks`) |
-| `DATABASE_URL` | PostgreSQL connection string (default: `postgresql://tower:tower@db:5432/tower`) |
-| `POSTGRES_USER` | PostgreSQL user (default: tower) |
-| `POSTGRES_PASSWORD` | PostgreSQL password (required) |
-| `POSTGRES_DB` | PostgreSQL database (default: tower) |
+| `WORKER_RUNTIME` | gVisor runtime - set to "runsc" for kernel-level isolation |
+| `DATABASE_URL` | PostgreSQL connection string |
+
+All numeric config values are auto-clamped to valid ranges at startup (see `config.py` `_clamp_int`/`_clamp_float`). `DB_POOL_MAX_SIZE` auto-sizes to `MAX_CONCURRENT_JOBS * 2 + 5` unless explicitly set.
 
 ## Engine System (engines.py)
 

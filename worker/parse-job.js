@@ -17,7 +17,12 @@ const engine = c.engine || {};
 
 function shellEscape(s) {
   if (s === null || s === undefined || s === '') return "''";
-  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  let str = String(s).replace(/\0/g, '');
+  if (str.length > 100000) {
+    process.stderr.write('Warning: shell argument truncated to 100000 chars\n');
+    str = str.substring(0, 100000);
+  }
+  return "'" + str.replace(/'/g, "'\\''") + "'";
 }
 
 // Build CLI args from engine config
