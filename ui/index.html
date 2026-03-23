@@ -686,7 +686,7 @@ async function loadMeta() {
 
     const pSel = document.getElementById('fProfile');
     pSel.innerHTML = profiles.map(p =>
-      `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.description ? ' \u2014 ' + escapeHtml(p.description) : ''}</option>`
+      `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.description ? ' -' + escapeHtml(p.description) : ''}</option>`
     ).join('');
 
   } catch { /* ignore */ }
@@ -952,7 +952,7 @@ function extractChat(result) {
     if (texts.length) return texts.join('\n\n');
   }
   if (r && r.dry_run) {
-    return `**Dry run** \u2014 engine: \`${r.engine || '?'}\`\n\nCommand: \`${r.binary || '?'} ${(r.args || []).join(' ')}\``;
+    return `**Dry run** -engine: \`${r.engine || '?'}\`\n\nCommand: \`${r.binary || '?'} ${(r.args || []).join(' ')}\``;
   }
   if (result.logs) return result.logs;
   return null;
