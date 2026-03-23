@@ -132,7 +132,7 @@ All variables are read from `.env` (copy from `.env.example`). Only `POSTGRES_PA
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `POSTGRES_PASSWORD` | - | **Required.** PostgreSQL password |
-| `TOWER_PORT` | `8420` | Port exposed by the load balancer |
+| `TOWER_PORT` | `8420` | Port exposed by Tower |
 | `TOWER_API_KEY` | - | Bearer token for API auth - empty means no auth |
 | `TOWER_REPLICAS` | `1` | Number of Tower instances (horizontal scaling) |
 
@@ -216,7 +216,7 @@ WORKER_RUNTIME=runsc                   # optional: gVisor kernel-level isolation
 
 Security hardening is always enabled: `cap_drop=ALL`, `no-new-privileges`, `pids_limit=100`, `ipc_mode=private`. Optional gVisor (`WORKER_RUNTIME=runsc`) adds kernel-level isolation.
 
-Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of the load balancer.
+Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Traefik, Caddy) in front of Tower.
 
 ### LLM Gateway
 
@@ -245,7 +245,6 @@ agent-worker/
 │   ├── entrypoint.sh      #   Waits for config injection, then runs job
 │   ├── run-job.sh         #   Engine-agnostic execution (hooks + CLI + result)
 │   └── parse-job.js       #   Translates job.json to shell variables
-├── lb/                    # Load balancer (nginx round-robin)
 ├── gateway/               # LLM Gateway (nginx - hides API keys)
 ├── profiles/              # Agent profiles (TOML)
 ├── templates/             # Jinja2 templates (prompts, agent instructions)

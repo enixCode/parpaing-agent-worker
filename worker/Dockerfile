@@ -1,4 +1,4 @@
-FROM dhi.io/node:22-dev
+FROM node:22-bookworm
 
 USER root
 

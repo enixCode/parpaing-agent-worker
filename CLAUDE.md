@@ -9,11 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 ```
-POST /jobs - LB :8420 - Tower :8420 - 202 {job_id} (immediate)
-       │
-       ▼
-  LB (nginx :80, exposed as TOWER_PORT):
-    Round-robin proxy to N Tower replicas
+POST /jobs - Tower :TOWER_PORT - 202 {job_id} (immediate)
        │
        ▼
   Tower (FastAPI :8420) x TOWER_REPLICAS:
@@ -143,7 +139,6 @@ Key directories (use `ls` for full listing):
 - `hooks/` - Worker hook scripts (optional, per-profile)
 - `db/` - PostgreSQL schema (init.sql: jobs + containers tables)
 - `gateway/` - LLM Gateway (nginx reverse proxy, hides API keys)
-- `lb/` - Load balancer (nginx round-robin to Tower replicas)
 - `ui/` - Web dashboard (single HTML file)
 - `docs/` - Documentation (mkdocs)
 - `tests/unit/` - Unit tests (no Docker required)
@@ -376,6 +371,5 @@ Always propagate changes across: code ↔ schema ↔ docs ↔ CLAUDE.md
 - **Config**: TOML (tomllib stdlib) + Jinja2
 - **DB**: PostgreSQL 17 (job persistence + container pool)
 - **Hooks**: Pre/post scripts injected into worker container (per-profile)
-- **LB**: nginx (round-robin proxy to Tower replicas, SSE support)
 - **Gateway**: nginx (LLM API proxy - hides API keys from workers)
-- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (LB+Tower+DB+Gateway), `agent-workers` (shared worker network, internal, ICC disabled)
+- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (Tower+DB+Gateway), `agent-workers` (shared worker network, internal, ICC disabled)
