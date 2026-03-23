@@ -36,6 +36,39 @@ _MAX_ERROR_LEN = 500
 _MAX_LOG_LEN = 2000
 
 
+def _summarize_agent_error(result: dict | list) -> str | None:
+    """Extract a human-readable error summary from Claude Code output."""
+    events = result if isinstance(result, list) else None
+    if not events:
+        return None
+
+    # Count retries and extract error type
+    retries = [e for e in events if isinstance(e, dict) and e.get("subtype") == "api_retry"]
+    # Find the result event
+    result_event = next(
+        (e for e in reversed(events)
+         if isinstance(e, dict) and e.get("type") == "result"),
+        None,
+    )
+
+    parts = []
+    if retries:
+        error_types = {r.get("error", "unknown") for r in retries}
+        statuses = {r.get("error_status") for r in retries} - {None}
+        parts.append(f"{len(retries)} API retries (error: {', '.join(error_types)})")
+        if statuses:
+            parts.append(f"status: {', '.join(str(s) for s in statuses)}")
+
+    if result_event:
+        msg = result_event.get("result", "")
+        if msg and msg != "Request timed out":
+            parts.append(msg)
+        elif msg == "Request timed out":
+            parts.append("API request timed out")
+
+    return " - ".join(parts) if parts else None
+
+
 def _sanitize_error(e: Exception) -> str:
     """Return a safe error message, stripping internal paths and Docker details."""
     error_type = type(e).__name__
@@ -73,7 +106,10 @@ async def _collect_output(job_id: str, container, exit_code: int, logs: str) -> 
         output["stderr"] = stderr
 
     if exit_code != 0 and "error" not in output:
-        output["error"] = f"Agent exited with code {exit_code}"
+        # Try to extract a useful error from agent output
+        agent_result = output.get("result")
+        summary = _summarize_agent_error(agent_result) if agent_result else None
+        output["error"] = summary or f"Agent exited with code {exit_code}"
 
     return output
 

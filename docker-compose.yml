@@ -63,6 +63,7 @@ services:
       - ./gateway/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     networks:
       - agent-net
