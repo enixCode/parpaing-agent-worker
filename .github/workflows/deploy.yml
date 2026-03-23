@@ -1,7 +1,7 @@
 name: Deploy
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions: {}
 
@@ -16,4 +16,4 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_DEPLOY_KEY }}
-          script: ${{ github.event.repository.name }}
+          script: ${{ github.ref_name == 'dev' && 'parpaing-agent-worker-preview' || 'parpaing-agent-worker' }}
