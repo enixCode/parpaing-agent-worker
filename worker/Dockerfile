@@ -13,6 +13,7 @@ RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 
 # Engine: OpenCode
 RUN curl -fsSL https://opencode.ai/install | bash \
+    && cp $(find / -name opencode -type f 2>/dev/null | head -1) /usr/local/bin/opencode \
     && opencode version
 
 ENV CLAUDE_CODE_DISABLE_TELEMETRY=1
