@@ -26,7 +26,7 @@ All worker containers run with security hardening:
 - `pids_limit=100` - fork bomb protection
 - `ipc_mode="private"` - isolated IPC namespace
 - Internal network only (no direct internet access)
-- ICC disabled (workers can't see each other)
+- Internal network (no internet access, gateway-only)
 - Optional gVisor kernel-level isolation via `WORKER_RUNTIME=runsc`
 
 ### API Authentication

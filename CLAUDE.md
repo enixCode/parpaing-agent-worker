@@ -119,7 +119,7 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 - `ipc_mode="private"`
 - Memory & CPU limits (global defaults from config)
 - Non-root `agent` user (UID 1000)
-- Shared `agent-workers` network with ICC disabled (workers can't see each other)
+- Shared `agent-workers` network (internal, no internet access)
 - `internal=True` - workers have no direct internet access
 - LLM Gateway (always enabled): workers get placeholder keys, real keys stay in gateway container
 - Optional gVisor kernel-level isolation via `WORKER_RUNTIME=runsc`
@@ -372,4 +372,4 @@ Always propagate changes across: code ↔ schema ↔ docs ↔ CLAUDE.md
 - **DB**: PostgreSQL 17 (job persistence + container pool)
 - **Hooks**: Pre/post scripts injected into worker container (per-profile)
 - **Gateway**: nginx (LLM API proxy - hides API keys from workers)
-- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (Tower+DB+Gateway), `agent-workers` (shared worker network, internal, ICC disabled)
+- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (Tower+DB+Gateway), `agent-workers` (shared worker network, internal)

@@ -117,7 +117,7 @@ curl http://localhost:8420/engines
 
 ## Container Pool
 
-Tower maintains a pool of warm worker containers, ready to execute jobs instantly. All containers share a single `agent-workers` network with inter-container communication disabled (ICC=false), so workers cannot see each other.
+Tower maintains a pool of warm worker containers, ready to execute jobs instantly. All containers share a single `agent-workers` internal network (no internet access). Workers reach the LLM gateway on this network.
 
 ### How It Works
 
@@ -150,7 +150,7 @@ Security hardening is **always enabled** on all worker containers:
 - `ipc_mode="private"` - isolated IPC namespace
 - Memory and CPU limits (configurable)
 - Internal network only (no direct internet access)
-- ICC disabled (workers can't see each other)
+- Internal network (no internet access, gateway-only)
 
 For additional kernel-level isolation, set `WORKER_RUNTIME=runsc` (requires gVisor installed on the host).
 
@@ -212,7 +212,7 @@ Worker Container                          Gateway (nginx:alpine)
 
 - `GATEWAY_URL` is validated at startup - only http/https schemes allowed, localhost and metadata IPs are blocked (SSRF protection)
 - `cap_drop=ALL` prevents workers from sniffing traffic on the shared network
-- The worker network is `internal=true` (no direct internet) with ICC disabled (workers can't see each other)
+- The worker network is `internal=true` (no direct internet, gateway-only)
 - Workers only see placeholder API keys - real keys stay in the gateway container
 
 ### Health

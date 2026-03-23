@@ -23,9 +23,9 @@ class ContainerPool:
     The pool is DB-backed (containers table), so multiple Tower instances
     share the same pool. Acquire is atomic (FOR UPDATE SKIP LOCKED).
 
-    All workers share a single Docker bridge network with inter-container
-    communication disabled (ICC=false). This prevents subnet exhaustion
-    and isolates workers from each other while allowing internet access.
+    All workers share a single Docker bridge network (internal=true, ICC=true).
+    Internal blocks internet access; ICC allows workers to reach the gateway.
+    Worker-level isolation relies on cap_drop=ALL, non-root, PID limit, private IPC.
     """
 
     def __init__(self):
@@ -182,19 +182,18 @@ class ContainerPool:
     def _ensure_network() -> str:
         """Create or find the shared worker network. Returns network ID.
 
-        Validates existing networks have the correct config (internal, ICC disabled).
-        Recreates the network if settings are wrong (e.g. created before hardening).
+        Validates existing networks have the correct config (internal, ICC enabled).
+        Recreates the network if settings are wrong.
         """
         try:
             net = docker_client().networks.get(WORKER_NET)
             attrs = net.attrs or {}
             is_internal = attrs.get("Internal", False)
-            icc = (attrs.get("Options") or {}).get("com.docker.network.bridge.enable_icc", "true")
-            if is_internal and icc == "false":
+            if is_internal:
                 logger.info("Using existing worker network: %s", WORKER_NET)
                 return net.id
             # Network exists but has wrong config - recreate
-            logger.warning("Worker network %s has wrong config (internal=%s, icc=%s), recreating", WORKER_NET, is_internal, icc)
+            logger.warning("Worker network %s is not internal, recreating", WORKER_NET)
             net.remove()
         except docker.errors.NotFound:
             pass
@@ -207,11 +206,8 @@ class ContainerPool:
             WORKER_NET,
             driver="bridge",
             internal=True,
-            options={
-                "com.docker.network.bridge.enable_icc": "false",
-            },
         )
-        logger.info("Created worker network: %s (internal=true, icc=false)", WORKER_NET)
+        logger.info("Created worker network: %s (internal=true)", WORKER_NET)
         return net.id
 
     async def _create_warm(self, status: str = "ready") -> str:
