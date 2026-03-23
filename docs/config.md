@@ -149,8 +149,7 @@ Security hardening is **always enabled** on all worker containers:
 - PID limit 100 - prevents fork bombs
 - `ipc_mode="private"` - isolated IPC namespace
 - Memory and CPU limits (configurable)
-- Internal network only (no direct internet access)
-- Internal network (no internet access, gateway-only)
+- Internal network (no internet access, ICC enabled for gateway access)
 
 For additional kernel-level isolation, set `WORKER_RUNTIME=runsc` (requires gVisor installed on the host).
 

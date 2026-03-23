@@ -35,6 +35,7 @@ POST /jobs - Tower :TOWER_PORT - 202 {job_id} (immediate)
   Gateway (nginx :4000):
     Proxies /anthropic/ - api.anthropic.com, /openai/ - api.openai.com
     Workers get placeholder keys, real keys stay in gateway
+    Forwards anthropic-beta/anthropic-version, supports API key + OAuth token
        │
        ▼
   GET /jobs/{id} - poll status/result (any Tower instance)
@@ -119,9 +120,9 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 - `ipc_mode="private"`
 - Memory & CPU limits (global defaults from config)
 - Non-root `agent` user (UID 1000)
-- Shared `agent-workers` network (internal, no internet access)
-- `internal=True` - workers have no direct internet access
+- Shared `agent-workers` network (internal=true, no internet access, ICC enabled for gateway access)
 - LLM Gateway (always enabled): workers get placeholder keys, real keys stay in gateway container
+- Gateway forwards `anthropic-beta`/`anthropic-version` headers, supports both API key and OAuth token
 - Optional gVisor kernel-level isolation via `WORKER_RUNTIME=runsc`
 - Container destroyed after each job (completely clean)
 

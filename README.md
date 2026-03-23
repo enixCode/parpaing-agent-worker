@@ -220,7 +220,7 @@ Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Tr
 
 ### LLM Gateway
 
-The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The worker network is `internal=true` so workers can only reach the gateway, not the internet directly.
+The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The gateway supports both API key and OAuth token authentication, forwarding `anthropic-beta` and `anthropic-version` headers. The worker network is `internal=true` (no internet access, ICC enabled for gateway access).
 
 ## Project Structure
 

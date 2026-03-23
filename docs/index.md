@@ -222,7 +222,7 @@ Scale: `TOWER_REPLICAS=3 docker compose up -d`. Add TLS with a reverse proxy (Tr
 
 ### LLM Gateway
 
-The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The worker network is `internal=true` so workers can only reach the gateway, not the internet directly.
+The gateway is an nginx reverse proxy that sits between worker containers and LLM APIs. It is always enabled - workers receive placeholder keys and real API keys stay inside the gateway, never exposed to the job code. The gateway supports both API key and OAuth token authentication, forwarding `anthropic-beta` and `anthropic-version` headers. The worker network is `internal=true` (no internet access, ICC enabled for gateway access).
 
 ## Project Structure
 
@@ -235,10 +235,12 @@ agent-worker/
 │   ├── models.py          #   Request/response validation (Pydantic)
 │   ├── profiles.py        #   Profile loading and template rendering
 │   ├── engines.py         #   Engine loading and availability checks
-│   ├── pool.py            #   Warm container pool (DB-backed)
-│   ├── worker.py          #   Config injection and result extraction
-│   ├── job_store.py       #   PostgreSQL persistence with TTL cleanup
-│   └── job_runner.py      #   Background job execution and webhook dispatch
+│   ├── store/             #   Persistence layer
+│   │   ├── jobs.py        #     PostgreSQL persistence with TTL cleanup
+│   │   └── pool.py        #     Warm container pool (DB-backed)
+│   └── runner/            #   Execution layer
+│       ├── executor.py    #     Background job execution and webhook dispatch
+│       └── worker.py      #     Config injection and result extraction
 ├── worker/                # Agent container
 │   ├── Dockerfile         #   Node.js 22 + engine binaries (Claude Code, OpenCode)
 │   ├── entrypoint.sh      #   Waits for config injection, then runs job
