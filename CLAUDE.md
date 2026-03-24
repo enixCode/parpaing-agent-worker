@@ -19,7 +19,7 @@ POST /jobs - Tower :TOWER_PORT - 202 {job_id} (immediate)
        │
        ▼
   execute_job (background):
-    1. Load profile (TOML, LRU-cached) + render prompt & CLAUDE.md (Jinja2)
+    1. Load profile (from ConfigStore DB cache) + render prompt & CLAUDE.md (Jinja2)
     2. Acquire warm container from pool (atomic SQL)
     3. put_archive config (job.json + CLAUDE.md + hooks) - triggers entrypoint
     4. container.wait() in thread
@@ -43,6 +43,11 @@ POST /jobs - Tower :TOWER_PORT - 202 {job_id} (immediate)
   DELETE /jobs/{id} - cancel + kill container (cross-instance via Docker)
   GET /engines - list available engines (public)
   GET /profiles - list available profiles (public)
+  GET /configs?type= - list configs by type (public)
+  GET /configs/{type}/{name} - get full config (public)
+  POST /configs/{type} - create config (auth required)
+  PUT /configs/{type}/{name} - update config (auth required)
+  DELETE /configs/{type}/{name} - delete config (auth required)
   GET /health - deep check: DB + Docker + pool + gateway (public)
   GET /metrics - Prometheus metrics (public)
   GET /docs - Scalar API docs (public)
@@ -131,14 +136,14 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 Key directories (use `ls` for full listing):
 
 - `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles, metrics
-  - `tower/store/` - Persistence layer: jobs (job_store), pool (container pool)
+  - `tower/store/` - Persistence layer: jobs (job_store), pool (container pool), configs (config store)
   - `tower/runner/` - Execution layer: executor (job_runner), worker (config injection/extraction)
 - `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
 - `engines/` - Engine configs (TOML) - one per AI tool
 - `profiles/` - Agent profiles (TOML) - define defaults per use case
 - `templates/` - Jinja2 templates: `prompts/` (.md.j2) and `claude-md/` (.md.j2)
 - `hooks/` - Worker hook scripts (optional, per-profile)
-- `db/` - PostgreSQL schema (init.sql: jobs + containers tables)
+- `db/` - PostgreSQL schema (init.sql: jobs + containers + configs tables)
 - `gateway/` - LLM Gateway (nginx reverse proxy, hides API keys)
 - `ui/` - Web dashboard (single HTML file)
 - `docs/` - Documentation (mkdocs)
@@ -194,7 +199,7 @@ pytest tests/test_e2e_health.py        # run a single test file
 pytest tests/test_e2e_health.py -k "test_health"  # run a single test
 ```
 
-Unit tests cover: model validation, engine command building, profile variable validation, pool logic, job runner (sanitization, output collection, webhooks, execution, recovery, cleanup), worker helpers (tar building, extraction, binary safety).
+Unit tests cover: model validation, engine command building, profile variable validation, pool logic, job runner (sanitization, output collection, webhooks, execution, recovery, cleanup), worker helpers (tar building, extraction, binary safety), config store (cache operations, TOML extraction, config models).
 
 E2E tests use `dry_run=True` to avoid spawning real Claude agents. Set `TOWER_URL` and `TOWER_API_KEY` env vars to test against a custom endpoint (defaults: `http://localhost:8420`, no auth). E2E tests cover: auth, concurrency, endpoints, health, job lifecycle, load, profiles, validation, wait.
 
@@ -204,8 +209,8 @@ E2E tests use `dry_run=True` to avoid spawning real Claude agents. Set `TOWER_UR
 
 ```
 resolve_config(request):
-  1. load_engine(name) - EngineConfig (LRU-cached, max 32)
-  2. _load_profile(name) - TOML dict (LRU-cached, max 64)
+  1. load_engine(name) - EngineConfig (from ConfigStore DB cache)
+  2. _load_profile(name) - TOML dict (from ConfigStore DB cache)
   3. Prompt: request.prompt wins, else render profile [prompt] template with merged vars
   4. CLAUDE.md: always from profile [claude_md] template with merged claude_md_vars
   5. Model/tools/turns/budget/output_format: request wins if set, else profile, else hardcoded default
@@ -272,9 +277,22 @@ Essential vars (see `.env.example` for the full list with defaults):
 
 All numeric config values are auto-clamped to valid ranges at startup (see `config.py` `_clamp_int`/`_clamp_float`). `DB_POOL_MAX_SIZE` auto-sizes to `MAX_CONCURRENT_JOBS * 2 + 5` unless explicitly set.
 
+## Config Store (tower/store/configs.py)
+
+All configs (profiles, engines, templates) are stored in PostgreSQL (`configs` table) with an in-memory cache for fast sync reads. On first startup, configs are seeded from disk files (`profiles/`, `engines/`, `templates/`).
+
+- **Types**: `profile` (TOML), `engine` (TOML), `template` (Jinja2)
+- **Reads**: Sync from in-memory cache (dict lookup)
+- **Writes**: Async to DB + cache update
+- **API**: Full CRUD via `/configs/{type}/{name}` endpoints
+- **UI**: Config management tab in dashboard (create/edit/delete)
+- **Cache invalidation**: After any mutation, parsed caches in profiles.py and engines.py are cleared
+
+Startup sequence: `store.connect()` -> `ConfigStore.init(pool)` -> `seed_from_files()` -> `pool.start()` -> `recover_jobs()`
+
 ## Engine System (engines.py)
 
-Engines define how to invoke each AI tool. Each engine is a TOML file in `engines/` with sections:
+Engines define how to invoke each AI tool. Each engine is a TOML file in `engines/` (seeded to DB on first startup) with sections:
 
 ```toml
 [engine]
@@ -307,7 +325,7 @@ format = "json"                    # json | text
 auth = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]  # at least ONE must be set
 ```
 
-`load_engine()` loads and caches engine configs from TOML. `is_engine_available()` always returns `True` (gateway handles auth). `list_engines()` returns all engines with availability status. Engine configs are LRU-cached (maxsize=32).
+`load_engine()` loads engine configs from ConfigStore (DB-backed with in-memory cache). `is_engine_available()` always returns `True` (gateway handles auth). `list_engines()` returns all engines with availability status.
 
 **TOML to job.json mapping**: `engines.py` flattens the TOML structure when building `EngineConfig`:
 - `[command].map` - `EngineConfig.flag_map` - `job.json engine.flag_map`
@@ -322,13 +340,13 @@ The `engine` field is **required** in API requests. `job.json` includes the full
 
 ## Config: TOML Profiles + Jinja2 Templates
 
-**Profiles** (`profiles/*.toml`): define agent defaults (model, tools, max_turns, prompt template, claude_md template, hooks, resources).
+**Profiles** (TOML, stored in DB `configs` table): define agent defaults (model, tools, max_turns, prompt template, claude_md template, hooks, resources). Seeded from `profiles/*.toml` on first startup.
 
-**Templates** (`templates/**/*.j2`): Jinja2 templates for prompts and CLAUDE.md. Undefined variables render as empty (non-strict `jinja2.Undefined`).
+**Templates** (Jinja2, stored in DB `configs` table): templates for prompts and CLAUDE.md. Undefined variables render as empty (non-strict `jinja2.Undefined`). Seeded from `templates/**/*.j2` on first startup.
 
 **Hooks** (`hooks/*.sh` or inline): pre/post scripts injected into the worker container via put_archive. Can be a filename reference from `hooks/` dir or an inline multiline script in the profile TOML.
 
-Flow: `profile.toml - load defaults + render templates - tar archive (put_archive) - worker`
+Flow: `ConfigStore (DB) - load profile + render templates - tar archive (put_archive) - worker`
 
 **Profile is mandatory** (default: `"default"`). Request fields override profile values. Error if profile not found.
 
@@ -348,11 +366,12 @@ Legacy format (`key = "value"`) still supported. Variables are passed to Jinja2 
 
 When modifying any code, ALWAYS update the related files to keep everything in sync:
 
-- **engines/** changed - update `docs/api.md` (GET /engines response), `CLAUDE.md` if new engine added
+- **engines/** changed - configs now in DB, update via /configs API or UI. Update `docs/api.md`, `CLAUDE.md` if new engine added
 - **engines.py** changed - check if `worker/parse-job.js` contract still matches
 - **models.py** changed - update `db/init.sql`, `docs/request.md`, `CLAUDE.md` if structure changed
-- **Profiles** changed - update `docs/profiles.md`
-- **Templates** added/changed - update `docs/templates.md`
+- **Profiles** changed - configs now in DB, update via /configs API or UI. Update `docs/profiles.md`
+- **Templates** added/changed - configs now in DB, update via /configs API or UI. Update `docs/templates.md`
+- **tower/store/configs.py** changed - check if profiles.py/engines.py contracts still match
 - **Env vars** added/changed - update `.env.example`, `config.py`, `docs/config.md`, `CLAUDE.md` (NOT docker-compose.yml - `env_file: .env` passes all vars automatically)
 - **API keys for new engines** - just add to `.env.example` + engine TOML `[env] auth` - pool reads engines dynamically
 - **Endpoints** added/changed - update `docs/api.md`, `CLAUDE.md`

@@ -46,21 +46,21 @@ class AgentRunRequest(BaseModel):
     @classmethod
     def validate_agent_id(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("agent_id must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars, no spaces)")
         return v
 
     @field_validator("engine")
     @classmethod
     def validate_engine(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("engine must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars)")
         return v
 
     @field_validator("profile")
     @classmethod
     def validate_profile(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("profile must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars)")
         return v
 
     @field_validator("prompt")
@@ -178,3 +178,70 @@ class JobResponse(BaseModel):
     exit_code: int | None = None
     result: dict | None = None
     error: str | None = None
+
+
+# --- Config CRUD models ---
+
+_VALID_CONFIG_TYPES = ("profile", "engine", "template")
+_TEMPLATE_NAME = re.compile(r"^(prompts|claude-md)/[a-zA-Z0-9_-]{1,64}\.md\.j2$")
+_MAX_CONFIG_CONTENT = 100_000
+
+
+class ConfigCreateRequest(BaseModel):
+    """Create a new config (profile, engine, or template)."""
+    name: str = Field(description="Config name (e.g. 'my-profile', 'prompts/my-prompt.md.j2')")
+    content: str = Field(description="Raw content (TOML for profiles/engines, Jinja2 for templates)")
+    description: str = Field("", description="Short description")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        # Template names have path format, others use safe ID
+        if not _SAFE_ID.match(v) and not _TEMPLATE_NAME.match(v):
+            raise ValueError(
+                "name must be alphanumeric/dash/underscore (1-64 chars), "
+                "or a template path like 'prompts/my-template.md.j2'"
+            )
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content cannot be empty")
+        if len(v) > _MAX_CONFIG_CONTENT:
+            raise ValueError(f"content exceeds {_MAX_CONFIG_CONTENT} characters")
+        return v
+
+
+class ConfigUpdateRequest(BaseModel):
+    """Update an existing config."""
+    content: str = Field(description="New raw content")
+    description: str | None = Field(None, description="New description (null = keep current)")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content cannot be empty")
+        if len(v) > _MAX_CONFIG_CONTENT:
+            raise ValueError(f"content exceeds {_MAX_CONFIG_CONTENT} characters")
+        return v
+
+
+class ConfigResponse(BaseModel):
+    """Full config response with content."""
+    name: str
+    type: str
+    content: str
+    description: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConfigListItem(BaseModel):
+    """Config list item (no content)."""
+    name: str
+    type: str
+    description: str
+    updated_at: datetime

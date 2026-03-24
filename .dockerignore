@@ -11,5 +11,6 @@ docs/
 .github/
 .vscode/
 .pytest_cache/
+.secretmask/
 *.md
 LICENSE

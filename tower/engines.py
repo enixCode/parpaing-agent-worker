@@ -1,11 +1,9 @@
 """Engine loading and availability checking."""
 
-import functools
+import io
 import logging
 import tomllib
 from dataclasses import dataclass
-
-from .config import ENGINES_DIR
 
 logger = logging.getLogger("tower.engines")
 
@@ -27,18 +25,13 @@ class EngineConfig:
     env_auth: list[str]          # at least ONE must be set (API keys)
 
 
-@functools.lru_cache(maxsize=32)
-def load_engine(engine_id: str) -> EngineConfig | None:
-    """Load engine config from TOML file."""
-    path = (ENGINES_DIR / f"{engine_id}.toml").resolve()
-    if not path.is_relative_to(ENGINES_DIR.resolve()):
-        logger.warning("Engine path traversal blocked: %s", engine_id)
-        return None
-    if not path.exists():
-        return None
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
+# Parsed engine cache (cleared on config mutations)
+_parsed_engines: dict[str, EngineConfig | None] = {}
 
+
+def _parse_engine(engine_id: str, content: str) -> EngineConfig:
+    """Parse TOML content into an EngineConfig."""
+    data = tomllib.load(io.BytesIO(content.encode("utf-8")))
     engine = data.get("engine", {})
     command = data.get("command", {})
     output = data.get("output", {})
@@ -60,6 +53,28 @@ def load_engine(engine_id: str) -> EngineConfig | None:
     )
 
 
+def load_engine(engine_id: str) -> EngineConfig | None:
+    """Load engine config from ConfigStore (cached after first parse)."""
+    if engine_id in _parsed_engines:
+        return _parsed_engines[engine_id]
+
+    from .store.configs import ConfigStore
+    store = ConfigStore.instance()
+    content = store.get(engine_id, "engine") if store else None
+    if content is None:
+        _parsed_engines[engine_id] = None
+        return None
+
+    cfg = _parse_engine(engine_id, content)
+    _parsed_engines[engine_id] = cfg
+    return cfg
+
+
+def invalidate_caches():
+    """Clear parsed engine cache (call after config mutations)."""
+    _parsed_engines.clear()
+
+
 def is_engine_available(engine: EngineConfig) -> bool:
     """Always available - gateway handles auth."""
     return True
@@ -67,15 +82,19 @@ def is_engine_available(engine: EngineConfig) -> bool:
 
 def list_engines() -> list[dict]:
     """List all available engines with availability status."""
+    from .store.configs import ConfigStore
+    store = ConfigStore.instance()
+    if not store:
+        return []
+
     engines = []
-    if ENGINES_DIR.exists():
-        for f in ENGINES_DIR.glob("*.toml"):
-            cfg = load_engine(f.stem)
-            if cfg:
-                engines.append({
-                    "id": cfg.id,
-                    "name": cfg.name,
-                    "description": cfg.description,
-                    "available": is_engine_available(cfg),
-                })
+    for item in store.list_by_type("engine"):
+        cfg = load_engine(item["name"])
+        if cfg:
+            engines.append({
+                "id": cfg.id,
+                "name": cfg.name,
+                "description": cfg.description,
+                "available": is_engine_available(cfg),
+            })
     return engines
