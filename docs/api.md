@@ -11,7 +11,7 @@ If `TOWER_API_KEY` is set, all endpoints except public paths require a bearer to
 Authorization: Bearer <TOWER_API_KEY>
 ```
 
-**Public paths** (no auth required): `/`, `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/ui`
+**Public paths** (no auth required): `/`, `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/configs` (GET only), `/ui`
 
 Returns `401` if the key is missing or invalid.
 
@@ -142,6 +142,98 @@ List available profiles with overridable variables.
 
 A UI can build a dynamic form from `prompt_vars` (keys = field names, values = typed definitions with defaults).
 
+### GET /configs
+
+List all configs or filter by type. Public endpoint (no auth required for GET).
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | null | Filter by type: `profile`, `engine`, `template` |
+
+**200:**
+```json
+{
+  "configs": [
+    {"name": "default", "type": "profile", "description": "General-purpose agent", "created_at": "...", "updated_at": "..."},
+    {"name": "claude-code", "type": "engine", "description": "Anthropic Claude Code CLI agent", "created_at": "...", "updated_at": "..."}
+  ]
+}
+```
+
+**422:** Invalid type value.
+
+### GET /configs/{type}/{name}
+
+Get full config content by type and name. Public endpoint.
+
+**200:**
+```json
+{
+  "name": "default",
+  "type": "profile",
+  "content": "# TOML or Jinja2 content...",
+  "description": "General-purpose agent",
+  "created_at": "2026-03-10T12:00:00Z",
+  "updated_at": "2026-03-10T12:00:00Z"
+}
+```
+
+**404:** Config not found.
+
+**422:** Invalid type value.
+
+### POST /configs/{type}
+
+Create a new config. Requires auth.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | *required* | Config name (e.g. `my-profile`, `prompts/my-prompt.md.j2`) |
+| `content` | string | *required* | Raw content (TOML for profiles/engines, Jinja2 for templates) |
+| `description` | string | `""` | Short description |
+
+**201:** Created config entry.
+
+**409:** Config already exists.
+
+**422:** Invalid type, name, or content.
+
+### PUT /configs/{type}/{name}
+
+Update an existing config. Requires auth.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `content` | string | *required* | New raw content |
+| `description` | string \| null | null | New description (null = keep current) |
+
+**200:** Updated config entry.
+
+**404:** Config not found.
+
+**422:** Invalid type or content.
+
+### DELETE /configs/{type}/{name}
+
+Delete a config. Requires auth.
+
+**200:**
+```json
+{"deleted": "profile/my-profile"}
+```
+
+**404:** Config not found.
+
+**422:** Invalid type value.
+
+---
+
 ### POST /jobs
 
 Async job creation - returns `202` immediately.
@@ -152,7 +244,7 @@ Async job creation - returns `202` immediately.
 |---|---|---|---|
 | `agent_id` | string | *required* | Job ID prefix (1-64 alphanum/dash/underscore). Job ID = `{agent_id}-{12-hex}`. |
 | `engine` | string | *required* | Engine to use (e.g. `claude-code`, `opencode`). Use `GET /engines` to list. |
-| `prompt` | string \| null | null | Direct prompt. Overrides the profile's prompt template. Max 100,000 chars. |
+| `prompt` | string \| null | null | Direct prompt. Overrides the profile's prompt template. Max 100,000,000 chars. |
 | `profile` | string | `"default"` | Profile name (1-64 alphanum/dash/underscore). |
 | `prompt_vars` | object | `{}` | Variables for the profile's prompt template (Jinja2). |
 | `claude_md_vars` | object | `{}` | Variables for the profile's CLAUDE.md template. |
@@ -162,7 +254,7 @@ Async job creation - returns `202` immediately.
 | `max_budget_usd` | float \| null | null | Max spend in USD (>0, ≤50). |
 | `mcp_config` | object \| null | null | MCP server configuration (passed to Claude Code CLI). |
 | `model` | string \| null | null | Claude model override (e.g. claude-sonnet-4-6). |
-| `system_prompt` | string \| null | null | Override the system prompt entirely. Max 50,000 chars. |
+| `system_prompt` | string \| null | null | Override the system prompt entirely. Max 500,000 chars. |
 | `output_format` | string \| null | null | `json`, `text`, or `stream-json`. |
 | `dry_run` | bool | `false` | Test mode - simulates without running Claude. |
 | `webhook_url` | string \| null | null | URL to POST result on completion. Must be http/https, no internal hosts. Max 2048 chars. |

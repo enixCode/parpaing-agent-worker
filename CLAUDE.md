@@ -251,7 +251,7 @@ run-job.sh (7 steps):
 - **Status enum**: `pending - running - completed | failed | cancelled`
 - **DB schema**: request stored as single JSONB column (not flattened into individual columns)
 - **Container pool**: DB-backed `containers` table, atomic acquire via `FOR UPDATE SKIP LOCKED`
-- **Logging**: per-module loggers (`tower`, `tower.job_runner`, `tower.worker`, `tower.job_store`, `tower.profiles`, `tower.engines`, `tower.pool`) - logger names kept stable across refactors for log filtering compatibility
+- **Logging**: per-module loggers (`tower`, `tower.job_runner`, `tower.worker`, `tower.job_store`, `tower.config_store`, `tower.profiles`, `tower.engines`, `tower.pool`) - logger names kept stable across refactors for log filtering compatibility
 - **Atomic DB updates**: `UPDATE WHERE status IN ('pending','running') RETURNING` prevents multi-tower race conditions
 - **Cancellation pattern**: DB state + `pool.release()` (kill + remove container)
 - **Graceful shutdown**: leaves running containers for re-adoption by other Towers

@@ -108,7 +108,7 @@ Tu es un agent autonome dans un container Docker isolé.
 | `constraints` | no | - | `[claude_md.variables]` in profile |
 | `output_instructions` | no | - | `[claude_md.variables]` in profile |
 | `timeout` | no | `3600` | Auto-injected from `[resources].timeout` or `WORKER_TIMEOUT_SECONDS` |
-| `mem_limit` | no | `2g` | Auto-injected from `WORKER_MEM_LIMIT` |
+| `mem_limit` | no | `2g` (injected) / `512m` (template fallback) | Auto-injected from `WORKER_MEM_LIMIT` |
 | `cpu_limit` | no | `1.0` | Auto-injected from `WORKER_CPU_LIMIT` |
 
 `timeout`, `mem_limit`, and `cpu_limit` are auto-injected by `profiles.py` using `setdefault` before rendering. They reflect the actual config values (from `config.py` or the profile's `[resources].timeout`), so the template always shows accurate limits. The Jinja2 `| default()` filters are only fallbacks if injection is bypassed. Request-level `claude_md_vars` can override them.

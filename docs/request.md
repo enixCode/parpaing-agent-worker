@@ -9,7 +9,7 @@ Used by `POST /jobs`.
 |---|---|---|---|---|
 | `agent_id` | `string` | **required** | `^[a-zA-Z0-9_-]{1,64}$` | Identifier for the agent (used in job_id prefix) |
 | `engine` | `string` | **required** | `^[a-zA-Z0-9_-]{1,64}$` | Engine to use (e.g. `claude-code`, `opencode`) |
-| `prompt` | `string\|null` | `null` | Max 100,000 chars | Direct prompt. If null, uses profile template |
+| `prompt` | `string\|null` | `null` | Max 100,000,000 chars | Direct prompt. If null, uses profile template |
 | `profile` | `string` | `"default"` | `^[a-zA-Z0-9_-]{1,64}$` | Profile name (e.g. `"researcher"` loads `profiles/researcher.toml`). Must exist |
 | `prompt_vars` | `dict` | `{}` | | Variables injected into Jinja2 prompt template |
 | `claude_md_vars` | `dict` | `{}` | | Variables injected into profile's CLAUDE.md template |
@@ -19,7 +19,7 @@ Used by `POST /jobs`.
 | `max_budget_usd` | `float\|null` | `null` | >0, <=50 | Max spend in USD. `null` = unlimited |
 | `mcp_config` | `dict\|null` | `null` | | MCP server configuration (passed to Claude Code CLI) |
 | `model` | `string\|null` | `null` | `^[a-zA-Z0-9._/-]{1,128}$` | Model override (e.g. `claude-opus-4-6`, `anthropic/claude-sonnet-4`). `null` = profile default |
-| `system_prompt` | `string\|null` | `null` | Max 50,000 chars | Override the system prompt entirely |
+| `system_prompt` | `string\|null` | `null` | Max 500,000 chars | Override the system prompt entirely |
 | `output_format` | `string\|null` | `null` | `json`, `text`, `stream-json` | Output format. `null` = profile default or `json` |
 | `dry_run` | `bool` | `false` | | Test mode - logs the command without running Claude |
 
