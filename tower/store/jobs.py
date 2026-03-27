@@ -5,11 +5,11 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from .models import JobResponse, AgentRunRequest
+from ..models import JobResponse, AgentRunRequest
 
 import asyncpg
 
-from .config import DB_POOL_MIN_SIZE, DB_POOL_MAX_SIZE
+from ..config import DB_POOL_MIN_SIZE, DB_POOL_MAX_SIZE
 
 logger = logging.getLogger("tower.job_store")
 
@@ -42,8 +42,8 @@ class Job:
         "Turn the Job into a response model for the API client."
         return JobResponse(
         job_id=self.job_id, status=self.status,
-        engine=self.request.engine if self.request else None,
-        profile=self.request.profile if self.request else None,
+        engine=self.request.engine,
+        profile=self.request.profile,
         created_at=self.created_at,
         started_at=self.started_at, finished_at=self.finished_at,
         exit_code=self.exit_code, result=self.result, error=self.error,
@@ -184,9 +184,10 @@ class JobStore:
                 result = await conn.execute(
                     """DELETE FROM jobs
                        WHERE status IN ('completed', 'failed', 'cancelled')
-                       AND finished_at < now() - ($1 || ' hours')::interval""",
-                    str(self._ttl_hours),
+                       AND finished_at < now() - make_interval(hours => $1)""",
+                    self._ttl_hours,
                 )
+                # asyncpg execute() returns PostgreSQL command tag e.g. "DELETE 5"
                 ttl_removed = int(result.split()[-1]) if result else 0
 
                 # Cap: single atomic DELETE with OFFSET

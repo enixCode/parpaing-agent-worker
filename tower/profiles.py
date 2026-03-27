@@ -1,13 +1,12 @@
 """Profile loading, template rendering, and config resolution."""
 
-import functools
+import io
 import logging
 import tomllib
 from dataclasses import dataclass
 
 import jinja2
 
-from .config import PROFILES_DIR, TEMPLATES_DIR
 from .config import DEFAULT_MODEL, WORKER_TIMEOUT_SECONDS, WORKER_MEM_LIMIT, WORKER_CPU_LIMIT
 from .engines import EngineConfig, load_engine, is_engine_available
 from .models import AgentRunRequest
@@ -58,27 +57,43 @@ def _validate_vars(definitions: dict, provided: dict, section: str) -> dict:
 
 # --- Template engine ---
 
-_jinja_env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
-    undefined=jinja2.Undefined,
-)
-
-
 def _render_template(template_path: str, variables: dict) -> str:
-    tmpl = _jinja_env.get_template(template_path)
+    """Render a template from ConfigStore by path-like name."""
+    from .store.configs import ConfigStore
+    store = ConfigStore.instance()
+    content = store.get(template_path, "template") if store else None
+    if content is None:
+        raise ValueError(f"Template not found: {template_path}")
+    tmpl = jinja2.Template(content, undefined=jinja2.Undefined)
     return tmpl.render(**variables)
 
 
-@functools.lru_cache(maxsize=64)
+# --- Profile loading ---
+
+# Parsed TOML cache (cleared on config mutations)
+_parsed_profiles: dict[str, dict | None] = {}
+
+
 def _load_profile(name: str) -> dict | None:
-    path = (PROFILES_DIR / f"{name}.toml").resolve()
-    if not path.is_relative_to(PROFILES_DIR.resolve()):
-        logger.warning("Profile path traversal blocked: %s", name)
+    """Load profile from ConfigStore (cached after first parse)."""
+    if name in _parsed_profiles:
+        return _parsed_profiles[name]
+
+    from .store.configs import ConfigStore
+    store = ConfigStore.instance()
+    content = store.get(name, "profile") if store else None
+    if content is None:
+        _parsed_profiles[name] = None
         return None
-    if not path.exists():
-        return None
-    with open(path, "rb") as f:
-        return tomllib.load(f)
+
+    data = tomllib.load(io.BytesIO(content.encode("utf-8")))
+    _parsed_profiles[name] = data
+    return data
+
+
+def invalidate_caches():
+    """Clear parsed profile cache (call after config mutations)."""
+    _parsed_profiles.clear()
 
 
 # --- JobConfig ---
@@ -166,24 +181,28 @@ def resolve_config(req: AgentRunRequest) -> JobConfig:
 
 def list_profiles() -> list[dict]:
     """List all available profiles (public info only, no template paths)."""
+    from .store.configs import ConfigStore
+    store = ConfigStore.instance()
+    if not store:
+        return []
+
     profiles = []
-    if PROFILES_DIR.exists():
-        for f in PROFILES_DIR.glob("*.toml"):
-            data = _load_profile(f.stem)
-            if data:
-                agent = data.get("agent", {})
-                raw_vars = data.get("prompt", {}).get("variables", {})
-                # Normalize: typed dicts stay as-is, plain values → {type, default}
-                prompt_vars = {}
-                for k, v in raw_vars.items():
-                    if isinstance(v, dict) and "type" in v:
-                        prompt_vars[k] = v
-                    else:
-                        prompt_vars[k] = {"type": type(v).__name__, "default": v}
-                profiles.append({
-                    "name": f.stem,
-                    "description": agent.get("description", ""),
-                    "model": agent.get("model"),
-                    "prompt_vars": prompt_vars,
-                })
+    for item in store.list_by_type("profile"):
+        data = _load_profile(item["name"])
+        if data:
+            agent = data.get("agent", {})
+            raw_vars = data.get("prompt", {}).get("variables", {})
+            # Normalize: typed dicts stay as-is, plain values -> {type, default}
+            prompt_vars = {}
+            for k, v in raw_vars.items():
+                if isinstance(v, dict) and "type" in v:
+                    prompt_vars[k] = v
+                else:
+                    prompt_vars[k] = {"type": type(v).__name__, "default": v}
+            profiles.append({
+                "name": item["name"],
+                "description": agent.get("description", ""),
+                "model": agent.get("model"),
+                "prompt_vars": prompt_vars,
+            })
     return profiles

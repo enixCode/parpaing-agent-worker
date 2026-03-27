@@ -7,33 +7,47 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from prometheus_client import generate_latest
+
+import httpx
+
+import io
+import tomllib
+
+import jinja2
 
 from .config import (
     VERSION, MAX_CONCURRENT_JOBS, JOB_TTL_HOURS, MAX_RETAINED_JOBS,
-    DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH, docker_client,
+    DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH,
+    GATEWAY_URL, PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR, docker_client,
 )
-from .job_store import JobStore, JobStatus
-from .job_runner import execute_job, recover_jobs, cleanup_loop
-from .models import JobCreateRequest, JobCreateResponse, JobResponse
-from .pool import ContainerPool
-from .engines import list_engines as _list_engines
-from .profiles import list_profiles as _list_profiles
+from .store import JobStore, JobStatus, ContainerPool, ConfigStore
+from .runner import execute_job, recover_jobs, cleanup_loop
+from .models import (
+    JobCreateRequest, JobCreateResponse, JobResponse,
+    ConfigCreateRequest, ConfigUpdateRequest, ConfigResponse, ConfigListItem,
+    _VALID_CONFIG_TYPES,
+)
+from .engines import list_engines as _list_engines, load_engine, is_engine_available
+from .engines import invalidate_caches as _invalidate_engine_caches
+from .profiles import list_profiles as _list_profiles, _load_profile
+from .profiles import invalidate_caches as _invalidate_profile_caches
+from .metrics import JOBS_TOTAL, JOBS_ACTIVE, JOBS_BY_STATUS, POOL_READY, JOB_DURATION
 
 
-logger = logging.getLogger("tower")
+_log = logging.getLogger("tower")
+_log.setLevel(logging.INFO)
+if not _log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    _log.addHandler(_h)
+logger = _log
 
 store = JobStore(dsn=DATABASE_URL, max_retained=MAX_RETAINED_JOBS, ttl_hours=JOB_TTL_HOURS)
 pool = ContainerPool()
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
-
-# --- Prometheus metrics ---
-JOBS_TOTAL = Counter("tower_jobs_total", "Total jobs created", ["profile"])
-JOBS_ACTIVE = Gauge("tower_jobs_active", "Currently running jobs")
-JOBS_BY_STATUS = Gauge("tower_jobs_by_status", "Jobs per status", ["status"])
-POOL_READY = Gauge("tower_pool_ready", "Warm containers ready in pool")
-JOB_DURATION = Histogram("tower_job_duration_seconds", "Job execution time", buckets=[5, 15, 30, 60, 120, 300, 600, 1800, 3600])
 
 _MAX_LIST_LIMIT = 200
 _WAIT_MAX_TIMEOUT = 7200
@@ -46,6 +60,8 @@ _WAIT_POLL_INTERVAL = 2
 async def lifespan(app):
     """Startup and shutdown lifecycle."""
     await store.connect()
+    await ConfigStore.init(store.db_pool)
+    await ConfigStore.instance().seed_from_files(PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR)
     await pool.start(store.db_pool)
     await recover_jobs(store, semaphore, pool)
     cleanup_task = asyncio.create_task(cleanup_loop(store))
@@ -56,9 +72,14 @@ async def lifespan(app):
     await store.close()
 
 
-_AUTH_PUBLIC = {"/health", "/metrics", "/docs", "/openapi.json", "/engines", "/profiles"}
+_AUTH_PUBLIC = {"/", "/health", "/metrics", "/docs", "/openapi.json", "/engines", "/profiles", "/configs"}
 
 app = FastAPI(title="Parpaing", version=VERSION, docs_url=None, redoc_url=None, lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse("/ui")
 
 
 @app.get("/docs", include_in_schema=False)
@@ -106,6 +127,24 @@ def _custom_openapi():
 app.openapi = _custom_openapi
 
 
+# --- Validation errors ---
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """Return human-readable validation errors instead of raw Pydantic JSON."""
+    messages = []
+    for err in exc.errors():
+        field = ".".join(str(p) for p in err["loc"] if p != "body")
+        msg = err["msg"].removeprefix("Value error, ")
+        value = err.get("input")
+        text = f"'{field}': {msg}"
+        if value is not None:
+            text += f" (got: {value!r})"
+        messages.append(text)
+    detail = "; ".join(messages) if len(messages) > 1 else messages[0]
+    return JSONResponse(status_code=422, content={"error": detail})
+
+
 # --- Middleware ---
 
 @app.middleware("http")
@@ -120,10 +159,19 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """Bearer token auth on all endpoints except public ones."""
-    if TOWER_API_KEY and request.url.path not in _AUTH_PUBLIC and not request.url.path.startswith("/ui"):
+    """Bearer token auth on all endpoints except public ones.
+
+    /configs is public for GET only - mutations require auth.
+    """
+    path = request.url.path
+    is_public = path in _AUTH_PUBLIC or path.startswith("/ui")
+    # /configs/* GET is public, but POST/PUT/DELETE require auth
+    if path.startswith("/configs") and request.method == "GET":
+        is_public = True
+    if TOWER_API_KEY and not is_public:
         token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not hmac.compare_digest(token, TOWER_API_KEY):
+            logger.warning("Auth failed: %s %s", request.method, path)
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
     return await call_next(request)
 
@@ -141,12 +189,14 @@ async def health():
     except Exception:
         checks["db"] = "unavailable"
         healthy = False
+        logger.warning("Health check: DB unavailable")
 
     try:
-        docker_client.ping()
+        docker_client().ping()
     except Exception:
         checks["docker"] = "unavailable"
         healthy = False
+        logger.warning("Health check: Docker unavailable")
 
     try:
         pool_ready = await store.db_pool.fetchval(
@@ -155,6 +205,14 @@ async def health():
         checks["pool"] = f"{pool_ready} ready"
     except Exception:
         checks["pool"] = "unknown"
+
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            r = await client.get(f"{GATEWAY_URL}/health")
+            checks["gateway"] = "ok" if r.status_code == 200 else "unavailable"
+    except Exception:
+        checks["gateway"] = "unavailable"
+        healthy = False
 
     status_code = 200 if healthy else 503
     return JSONResponse(
@@ -171,6 +229,96 @@ def list_engines_endpoint():
 @app.get("/profiles")
 def list_profiles_endpoint():
     return {"profiles": _list_profiles()}
+
+
+# --- Config CRUD ---
+
+def _invalidate_all_caches():
+    """Clear parsed caches in profiles and engines after config mutations."""
+    _invalidate_profile_caches()
+    _invalidate_engine_caches()
+    # Reset OpenAPI schema so engine/profile enums get refreshed
+    app.openapi_schema = None
+
+
+def _validate_config_content(config_type: str, content: str):
+    """Validate content is parseable for the given type."""
+    if config_type == "profile" or config_type == "engine":
+        try:
+            tomllib.load(io.BytesIO(content.encode("utf-8")))
+        except Exception as e:
+            raise HTTPException(422, f"Invalid TOML: {e}")
+    elif config_type == "template":
+        try:
+            jinja2.Template(content)
+        except jinja2.TemplateSyntaxError as e:
+            raise HTTPException(422, f"Invalid Jinja2 template: {e}")
+
+
+@app.get("/configs")
+def list_configs(type: str | None = None):
+    """List configs, optionally filtered by type."""
+    cs = ConfigStore.instance()
+    if type:
+        if type not in _VALID_CONFIG_TYPES:
+            raise HTTPException(422, f"Invalid type. Must be one of: {', '.join(_VALID_CONFIG_TYPES)}")
+        return {"configs": cs.list_by_type(type)}
+    return {"configs": cs.list_all()}
+
+
+@app.get("/configs/{config_type}/{name:path}")
+def get_config(config_type: str, name: str):
+    """Get full config content by type and name."""
+    if config_type not in _VALID_CONFIG_TYPES:
+        raise HTTPException(422, f"Invalid type. Must be one of: {', '.join(_VALID_CONFIG_TYPES)}")
+    entry = ConfigStore.instance().get_full(name, config_type)
+    if not entry:
+        raise HTTPException(404, f"Config not found: {config_type}/{name}")
+    return entry
+
+
+@app.post("/configs/{config_type}", status_code=201)
+async def create_config(config_type: str, req: ConfigCreateRequest):
+    """Create a new config."""
+    if config_type not in _VALID_CONFIG_TYPES:
+        raise HTTPException(422, f"Invalid type. Must be one of: {', '.join(_VALID_CONFIG_TYPES)}")
+    _validate_config_content(config_type, req.content)
+    try:
+        entry = await ConfigStore.instance().create(req.name, config_type, req.content, req.description)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    _invalidate_all_caches()
+    logger.info("Config created: %s/%s", config_type, req.name)
+    return entry
+
+
+@app.put("/configs/{config_type}/{name:path}")
+async def update_config(config_type: str, name: str, req: ConfigUpdateRequest):
+    """Update an existing config."""
+    if config_type not in _VALID_CONFIG_TYPES:
+        raise HTTPException(422, f"Invalid type. Must be one of: {', '.join(_VALID_CONFIG_TYPES)}")
+    _validate_config_content(config_type, req.content)
+    try:
+        entry = await ConfigStore.instance().update(name, config_type, req.content, req.description)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    _invalidate_all_caches()
+    logger.info("Config updated: %s/%s", config_type, name)
+    return entry
+
+
+@app.delete("/configs/{config_type}/{name:path}")
+async def delete_config(config_type: str, name: str):
+    """Delete a config."""
+    if config_type not in _VALID_CONFIG_TYPES:
+        raise HTTPException(422, f"Invalid type. Must be one of: {', '.join(_VALID_CONFIG_TYPES)}")
+    try:
+        await ConfigStore.instance().delete(name, config_type)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    _invalidate_all_caches()
+    logger.info("Config deleted: %s/%s", config_type, name)
+    return {"deleted": f"{config_type}/{name}"}
 
 
 @app.get("/metrics", include_in_schema=False)
@@ -199,9 +347,18 @@ async def metrics():
 
 @app.post("/jobs", status_code=202)
 async def create_job(req: JobCreateRequest) -> JobCreateResponse:
+    engine = load_engine(req.engine)
+    if engine is None:
+        raise HTTPException(422, f"Engine not found: {req.engine}")
+    if not is_engine_available(engine):
+        raise HTTPException(422, f"Engine '{req.engine}' not available - set one of: {', '.join(engine.env_auth)}")
+    if req.profile != "default" and _load_profile(req.profile) is None:
+        raise HTTPException(422, f"Profile not found: {req.profile}")
+
     job_id = f"{req.agent_id}-{uuid.uuid4().hex[:12]}"
     await store.create(job_id, req, req.webhook_url)
     JOBS_TOTAL.labels(profile=req.profile).inc()
+    logger.info("Job %s created (engine=%s, profile=%s, agent=%s)", job_id, req.engine, req.profile, req.agent_id)
     asyncio.create_task(execute_job(job_id, store, semaphore, pool, dry_run=req.dry_run))
     return JobCreateResponse(job_id=job_id, status="pending")
 
@@ -243,13 +400,15 @@ async def cancel_job(job_id: str):
     if not cancelled:
         # Re-fetch to get current status (avoid stale data)
         job = await store.get(job_id)
-        raise HTTPException(409, f"Job already {job.status if job else 'unknown'}")
+        current = job.status.value if job and hasattr(job.status, "value") else (job.status if job else "unknown")
+        raise HTTPException(409, f"Job already {current}")
 
     # Re-fetch after atomic update to get current container_id
     job = await store.get(job_id)
     if job and job.container_id:
         await pool.release(job.container_id)
 
+    logger.info("Job %s cancelled", job_id)
     return {"job_id": job_id, "status": "cancelled"}
 
 

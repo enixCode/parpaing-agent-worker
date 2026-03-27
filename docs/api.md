@@ -11,7 +11,7 @@ If `TOWER_API_KEY` is set, all endpoints except public paths require a bearer to
 Authorization: Bearer <TOWER_API_KEY>
 ```
 
-**Public paths** (no auth required): `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/ui`
+**Public paths** (no auth required): `/`, `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/configs` (GET only), `/ui`
 
 Returns `401` if the key is missing or invalid.
 
@@ -19,9 +19,13 @@ Returns `401` if the key is missing or invalid.
 
 ## Endpoints
 
+### GET /
+
+Redirects to `/ui` (dashboard).
+
 ### GET /health
 
-Deep health check - verifies DB connectivity, Docker socket, and container pool.
+Deep health check - verifies DB connectivity, Docker socket, container pool, and LLM gateway.
 
 **200** - all checks pass:
 ```json
@@ -30,7 +34,8 @@ Deep health check - verifies DB connectivity, Docker socket, and container pool.
   "checks": {
     "db": "ok",
     "docker": "ok",
-    "pool": "3 ready"
+    "pool": "3 ready",
+    "gateway": "ok"
   }
 }
 ```
@@ -42,7 +47,8 @@ Deep health check - verifies DB connectivity, Docker socket, and container pool.
   "checks": {
     "db": "unavailable",
     "docker": "ok",
-    "pool": "unknown"
+    "pool": "unknown",
+    "gateway": "unavailable"
   }
 }
 ```
@@ -71,7 +77,7 @@ Dashboard UI for monitoring jobs and managing the system. Serves a static HTML p
 
 ### GET /engines
 
-List available engines with availability status (checks if required auth env vars are set).
+List available engines with availability status. Engines are always marked as available since the LLM gateway handles authentication.
 
 **200:**
 ```json
@@ -81,15 +87,13 @@ List available engines with availability status (checks if required auth env var
       "id": "claude-code",
       "name": "Claude Code",
       "description": "Anthropic Claude Code CLI agent",
-      "available": true,
-      "env_auth": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
+      "available": true
     },
     {
       "id": "opencode",
       "name": "OpenCode",
       "description": "Terminal-based AI coding agent (by SST/Anomaly)",
-      "available": false,
-      "env_auth": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+      "available": true
     }
   ]
 }
@@ -138,6 +142,98 @@ List available profiles with overridable variables.
 
 A UI can build a dynamic form from `prompt_vars` (keys = field names, values = typed definitions with defaults).
 
+### GET /configs
+
+List all configs or filter by type. Public endpoint (no auth required for GET).
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | null | Filter by type: `profile`, `engine`, `template` |
+
+**200:**
+```json
+{
+  "configs": [
+    {"name": "default", "type": "profile", "description": "General-purpose agent", "created_at": "...", "updated_at": "..."},
+    {"name": "claude-code", "type": "engine", "description": "Anthropic Claude Code CLI agent", "created_at": "...", "updated_at": "..."}
+  ]
+}
+```
+
+**422:** Invalid type value.
+
+### GET /configs/{type}/{name}
+
+Get full config content by type and name. Public endpoint.
+
+**200:**
+```json
+{
+  "name": "default",
+  "type": "profile",
+  "content": "# TOML or Jinja2 content...",
+  "description": "General-purpose agent",
+  "created_at": "2026-03-10T12:00:00Z",
+  "updated_at": "2026-03-10T12:00:00Z"
+}
+```
+
+**404:** Config not found.
+
+**422:** Invalid type value.
+
+### POST /configs/{type}
+
+Create a new config. Requires auth.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | *required* | Config name (e.g. `my-profile`, `prompts/my-prompt.md.j2`) |
+| `content` | string | *required* | Raw content (TOML for profiles/engines, Jinja2 for templates) |
+| `description` | string | `""` | Short description |
+
+**201:** Created config entry.
+
+**409:** Config already exists.
+
+**422:** Invalid type, name, or content.
+
+### PUT /configs/{type}/{name}
+
+Update an existing config. Requires auth.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `content` | string | *required* | New raw content |
+| `description` | string \| null | null | New description (null = keep current) |
+
+**200:** Updated config entry.
+
+**404:** Config not found.
+
+**422:** Invalid type or content.
+
+### DELETE /configs/{type}/{name}
+
+Delete a config. Requires auth.
+
+**200:**
+```json
+{"deleted": "profile/my-profile"}
+```
+
+**404:** Config not found.
+
+**422:** Invalid type value.
+
+---
+
 ### POST /jobs
 
 Async job creation - returns `202` immediately.
@@ -148,7 +244,7 @@ Async job creation - returns `202` immediately.
 |---|---|---|---|
 | `agent_id` | string | *required* | Job ID prefix (1-64 alphanum/dash/underscore). Job ID = `{agent_id}-{12-hex}`. |
 | `engine` | string | *required* | Engine to use (e.g. `claude-code`, `opencode`). Use `GET /engines` to list. |
-| `prompt` | string \| null | null | Direct prompt. Overrides the profile's prompt template. Max 100,000 chars. |
+| `prompt` | string \| null | null | Direct prompt. Overrides the profile's prompt template. Max 100,000,000 chars. |
 | `profile` | string | `"default"` | Profile name (1-64 alphanum/dash/underscore). |
 | `prompt_vars` | object | `{}` | Variables for the profile's prompt template (Jinja2). |
 | `claude_md_vars` | object | `{}` | Variables for the profile's CLAUDE.md template. |
@@ -158,7 +254,7 @@ Async job creation - returns `202` immediately.
 | `max_budget_usd` | float \| null | null | Max spend in USD (>0, ≤50). |
 | `mcp_config` | object \| null | null | MCP server configuration (passed to Claude Code CLI). |
 | `model` | string \| null | null | Claude model override (e.g. claude-sonnet-4-6). |
-| `system_prompt` | string \| null | null | Override the system prompt entirely. Max 50,000 chars. |
+| `system_prompt` | string \| null | null | Override the system prompt entirely. Max 500,000 chars. |
 | `output_format` | string \| null | null | `json`, `text`, or `stream-json`. |
 | `dry_run` | bool | `false` | Test mode - simulates without running Claude. |
 | `webhook_url` | string \| null | null | URL to POST result on completion. Must be http/https, no internal hosts. Max 2048 chars. |
@@ -179,7 +275,7 @@ List all jobs with pagination.
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `status` | string | null | Filter by status: `pending`, `running`, `completed`, `failed`, `cancelled` |
-| `limit` | int | 50 | Max jobs to return (1–200) |
+| `limit` | int | 50 | Max jobs to return (1-200) |
 | `offset` | int | 0 | Number of jobs to skip (>= 0) |
 
 **200:** Paginated envelope
@@ -231,7 +327,7 @@ Get a single job with full details.
 
 ### DELETE /jobs/{job_id}
 
-Cancel a pending or running job. Kills the container and releases it back to the pool if running.
+Cancel a pending or running job. Kills and removes the container if running (pool refills automatically).
 
 **200:**
 ```json
@@ -250,7 +346,7 @@ Block until the job finishes (completed, failed, or cancelled). Returns the full
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `timeout` | int | 3600 | Max wait time in seconds (1–7200) |
+| `timeout` | int | 3600 | Max wait time in seconds (1-7200) |
 
 **200** - job finished:
 ```json

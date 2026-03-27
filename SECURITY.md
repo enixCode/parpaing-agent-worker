@@ -17,15 +17,16 @@ If you discover a security vulnerability, please report it responsibly:
 - **Workers** run in isolated Docker containers, destroyed after each job
 - **No shared volumes** between Tower and workers - config is injected via `put_archive`, results extracted via `get_archive`
 
-### Hardening (`WORKER_HARDENED=true`)
+### Container Hardening (always enabled)
 
-When enabled, worker containers run with:
+All worker containers run with security hardening:
 
-- `read_only=True` root filesystem (writable tmpfs only)
 - `cap_drop=["ALL"]` - no Linux capabilities
-- `no-new-privileges` security option
-- `pids_limit=256` - fork bomb protection
-- Size-limited tmpfs mounts (`/home/agent` 1G, `/tmp` 512M, `/output` 256M)
+- `no-new-privileges:true` - prevent privilege escalation
+- `pids_limit=100` - fork bomb protection
+- `ipc_mode="private"` - isolated IPC namespace
+- Internal network (no internet access, ICC enabled for gateway access)
+- Optional gVisor kernel-level isolation via `WORKER_RUNTIME=runsc`
 
 ### API Authentication
 
@@ -40,6 +41,9 @@ When enabled, worker containers run with:
 - **Input validation**: Agent ID, profile, and plugin names restricted to `^[a-zA-Z0-9_-]{1,64}$`
 - **Error sanitization**: Internal paths and Docker details stripped from error responses
 - **Result size limits**: `MAX_RESULT_SIZE` prevents oversized container output from causing OOM
+- **XSS prevention**: Dashboard uses `escapeHtml()` for user-controlled content, API key stored in sessionStorage (not localStorage)
+- **Null-byte stripping**: Worker `parse-job.js` strips null bytes and truncates oversized shell arguments
+- **Config clamping**: All numeric env vars are auto-clamped to valid ranges at startup, preventing misconfiguration
 
 ## Supported Versions
 

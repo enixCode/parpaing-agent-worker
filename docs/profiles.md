@@ -107,6 +107,14 @@ All profiles use `claude-md/agent-base.md.j2`. Common variables: `role`, `guidel
 
 Request `claude_md_vars` are merged on top of profile variables (request wins).
 
+Additionally, `resolve_config` auto-injects resource values into the template context (as defaults, overridable via `claude_md_vars`):
+
+| Auto-injected variable | Source |
+|---|---|
+| `timeout` | Profile `[resources].timeout` or `WORKER_TIMEOUT_SECONDS` env |
+| `mem_limit` | `WORKER_MEM_LIMIT` env (e.g. `"2g"`) |
+| `cpu_limit` | `WORKER_CPU_LIMIT` env (e.g. `"1.0"`) |
+
 ### [resources]
 
 | Key | Default | Description |
@@ -156,6 +164,8 @@ These fields exist only in the API request and cannot be set in profiles:
 |---|---|
 | `system_prompt` | Override the system prompt entirely (passed directly to Claude Code CLI) |
 | `mcp_config` | MCP server configuration dict (written as `mcp.json` in the job config directory) |
+| `dry_run` | Test mode - logs the command without running the engine (default: `false`) |
+| `webhook_url` | URL to POST the result when the job completes (on `JobCreateRequest` only) |
 
 ## Included Profiles
 
@@ -196,7 +206,7 @@ Deep research - explores options, compares, recommends with sources.
 | Budget | $15.00 |
 | Timeout | 3600s (60 min) |
 
-**Prompt variables**: `query` (default: `"Trouver le meilleur framework pour..."`), `criteria` (default: `"Open source, actif, bonne doc"`), `context` (default: `"Projet web moderne"`)
+**Prompt variables**: `query` (required, default: `"Trouver le meilleur framework pour..."`), `criteria` (default: `"Open source, actif, bonne doc"`), `context` (default: `"Projet web moderne"`)
 
 ## Priority Order
 

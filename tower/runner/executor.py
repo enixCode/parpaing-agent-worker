@@ -10,11 +10,11 @@ from urllib.parse import urlparse
 import docker.errors
 import httpx
 
-from .config import WORKER_TIMEOUT_SECONDS, CLEANUP_INTERVAL, WEBHOOK_TIMEOUT
-from .job_store import JobStore, JobStatus
-from .models import is_internal_host
-from .pool import ContainerPool
-from .profiles import resolve_config
+from ..config import WORKER_TIMEOUT_SECONDS, CLEANUP_INTERVAL, WEBHOOK_TIMEOUT
+from ..store import JobStore, JobStatus
+from ..models import is_internal_host
+from ..store import ContainerPool
+from ..profiles import resolve_config
 from .worker import (
     inject_config, extract_result, extract_stderr,
     get_container,
@@ -34,6 +34,39 @@ _SENSITIVE_PATTERNS = re.compile(
 
 _MAX_ERROR_LEN = 500
 _MAX_LOG_LEN = 2000
+
+
+def _summarize_agent_error(result: dict | list) -> str | None:
+    """Extract a human-readable error summary from Claude Code output."""
+    events = result if isinstance(result, list) else None
+    if not events:
+        return None
+
+    # Count retries and extract error type
+    retries = [e for e in events if isinstance(e, dict) and e.get("subtype") == "api_retry"]
+    # Find the result event
+    result_event = next(
+        (e for e in reversed(events)
+         if isinstance(e, dict) and e.get("type") == "result"),
+        None,
+    )
+
+    parts = []
+    if retries:
+        error_types = {r.get("error", "unknown") for r in retries}
+        statuses = {r.get("error_status") for r in retries} - {None}
+        parts.append(f"{len(retries)} API retries (error: {', '.join(error_types)})")
+        if statuses:
+            parts.append(f"status: {', '.join(str(s) for s in statuses)}")
+
+    if result_event:
+        msg = result_event.get("result", "")
+        if msg and msg != "Request timed out":
+            parts.append(msg)
+        elif msg == "Request timed out":
+            parts.append("API request timed out")
+
+    return " - ".join(parts) if parts else None
 
 
 def _sanitize_error(e: Exception) -> str:
@@ -73,7 +106,10 @@ async def _collect_output(job_id: str, container, exit_code: int, logs: str) -> 
         output["stderr"] = stderr
 
     if exit_code != 0 and "error" not in output:
-        output["error"] = f"Agent exited with code {exit_code}"
+        # Try to extract a useful error from agent output
+        agent_result = output.get("result")
+        summary = _summarize_agent_error(agent_result) if agent_result else None
+        output["error"] = summary or f"Agent exited with code {exit_code}"
 
     return output
 
@@ -104,19 +140,25 @@ async def _wait_and_finish(job_id: str, container_id: str, container,
         )
     except asyncio.TimeoutError:
         logger.warning("Job %s timed out after %ds", job_id, timeout)
-        await pool.release(container_id)
         await store.finish_job(
             job_id, JobStatus.FAILED,
             error=f"Timed out after {timeout}s",
         )
+        await pool.release(container_id)
         return
 
     exit_code = result.get("StatusCode", -1)
-    logs = (await asyncio.to_thread(container.logs)).decode(errors="replace")
+    logs = (await asyncio.wait_for(
+        asyncio.to_thread(container.logs), timeout=60,
+    )).decode(errors="replace")
     output = await _collect_output(job_id, container, exit_code, logs)
 
-    await pool.release(container_id)
-    await _finish_and_webhook(job_id, output, store, webhook_url)
+    updated = await _finish_and_webhook(job_id, output, store, webhook_url)
+    if updated:
+        # We won the finish - release container (cancel handler didn't)
+        await pool.release(container_id)
+        status = "completed" if exit_code == 0 else "failed"
+        logger.info("Job %s %s (exit_code=%d)", job_id, status, exit_code)
 
 
 # --- Job execution ---
@@ -133,9 +175,9 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
         if not await store.start_job(job_id, started_at=now):
             logger.info("Job %s already taken or cancelled", job_id)
             return
+        logger.info("Job %s running", job_id)
 
-        # Lazy import to avoid circular dependency
-        from .main import JOB_DURATION
+        from ..metrics import JOB_DURATION
 
         t0 = time.monotonic()
         container_id = None
@@ -144,6 +186,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
             timeout = config.timeout or WORKER_TIMEOUT_SECONDS
 
             container_id, _network_id = await pool.acquire()
+            logger.info("Job %s acquired container %s", job_id, container_id[:12])
             container = await asyncio.to_thread(get_container, container_id)
 
             if not await store.set_container(job_id, container_id):
@@ -151,7 +194,7 @@ async def execute_job(job_id: str, store: JobStore, semaphore: asyncio.Semaphore
                 await pool.release(container_id)
                 return
 
-            await inject_config(container, config, dry_run=dry_run)
+            await inject_config(container, config, dry_run=dry_run, job_id=job_id)
             await _wait_and_finish(job_id, container_id, container,
                                    timeout, store, pool, job.webhook_url)
 
@@ -182,20 +225,21 @@ async def recover_jobs(store: JobStore, semaphore: asyncio.Semaphore, pool: Cont
     if not running:
         return
 
+    async def _readopt(jid, cid):
+        async with semaphore:
+            await _readopt_container(jid, cid, store, pool)
+
     readopted, failed = 0, 0
     for job_id, container_id in running:
         if container_id:
             try:
-                get_container(container_id)
+                await asyncio.to_thread(get_container, container_id)
             except docker.errors.NotFound:
                 pass  # Container gone - mark failed below
             except Exception as e:
                 logger.warning("Recovery: Docker error for job %s, skipping: %s", job_id, e)
                 continue
             else:
-                async def _readopt(jid, cid):
-                    async with semaphore:
-                        await _readopt_container(jid, cid, store, pool)
                 asyncio.create_task(_readopt(job_id, container_id))
                 readopted += 1
                 continue

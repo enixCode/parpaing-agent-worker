@@ -12,8 +12,15 @@ from pydantic import BaseModel, Field, field_validator
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
-_MAX_PROMPT_LEN = 100_000
-_MAX_SYSTEM_PROMPT_LEN = 50_000
+_MAX_PROMPT_LEN = 100_000_000
+_MAX_SYSTEM_PROMPT_LEN = 500_000
+
+# PostgreSQL JSONB rejects null bytes and bare surrogates
+_PG_UNSAFE = re.compile(r"[\x00\ud800-\udfff]")
+
+def _strip_pg_unsafe(s: str) -> str:
+    """Remove null bytes and bare surrogates that PostgreSQL JSONB rejects."""
+    return _PG_UNSAFE.sub("", s)
 
 
 class AgentRunRequest(BaseModel):
@@ -39,21 +46,21 @@ class AgentRunRequest(BaseModel):
     @classmethod
     def validate_agent_id(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("agent_id must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars, no spaces)")
         return v
 
     @field_validator("engine")
     @classmethod
     def validate_engine(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("engine must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars)")
         return v
 
     @field_validator("profile")
     @classmethod
     def validate_profile(cls, v: str) -> str:
         if not _SAFE_ID.match(v):
-            raise ValueError("profile must be 1-64 alphanumeric/dash/underscore chars")
+            raise ValueError("must contain only letters, numbers, dashes, or underscores (1-64 chars)")
         return v
 
     @field_validator("prompt")
@@ -61,6 +68,8 @@ class AgentRunRequest(BaseModel):
     def validate_prompt(cls, v: str | None) -> str | None:
         if v is not None and len(v) > _MAX_PROMPT_LEN:
             raise ValueError(f"prompt exceeds {_MAX_PROMPT_LEN} characters")
+        if v is not None:
+            v = _strip_pg_unsafe(v)
         return v
 
     @field_validator("system_prompt")
@@ -68,6 +77,8 @@ class AgentRunRequest(BaseModel):
     def validate_system_prompt(cls, v: str | None) -> str | None:
         if v is not None and len(v) > _MAX_SYSTEM_PROMPT_LEN:
             raise ValueError(f"system_prompt exceeds {_MAX_SYSTEM_PROMPT_LEN} characters")
+        if v is not None:
+            v = _strip_pg_unsafe(v)
         return v
 
     @field_validator("plugins")
@@ -103,7 +114,7 @@ class AgentRunRequest(BaseModel):
     @classmethod
     def validate_max_budget(cls, v: float | None) -> float | None:
         if v is not None and (v <= 0 or v > 50.0):
-            raise ValueError("max_budget_usd must be between 0 and 50")
+            raise ValueError("max_budget_usd must be greater than 0 and at most 50")
         return v
 
 
@@ -167,3 +178,70 @@ class JobResponse(BaseModel):
     exit_code: int | None = None
     result: dict | None = None
     error: str | None = None
+
+
+# --- Config CRUD models ---
+
+_VALID_CONFIG_TYPES = ("profile", "engine", "template")
+_TEMPLATE_NAME = re.compile(r"^(prompts|claude-md)/[a-zA-Z0-9_-]{1,64}\.md\.j2$")
+_MAX_CONFIG_CONTENT = 100_000
+
+
+class ConfigCreateRequest(BaseModel):
+    """Create a new config (profile, engine, or template)."""
+    name: str = Field(description="Config name (e.g. 'my-profile', 'prompts/my-prompt.md.j2')")
+    content: str = Field(description="Raw content (TOML for profiles/engines, Jinja2 for templates)")
+    description: str = Field("", description="Short description")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        # Template names have path format, others use safe ID
+        if not _SAFE_ID.match(v) and not _TEMPLATE_NAME.match(v):
+            raise ValueError(
+                "name must be alphanumeric/dash/underscore (1-64 chars), "
+                "or a template path like 'prompts/my-template.md.j2'"
+            )
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content cannot be empty")
+        if len(v) > _MAX_CONFIG_CONTENT:
+            raise ValueError(f"content exceeds {_MAX_CONFIG_CONTENT} characters")
+        return v
+
+
+class ConfigUpdateRequest(BaseModel):
+    """Update an existing config."""
+    content: str = Field(description="New raw content")
+    description: str | None = Field(None, description="New description (null = keep current)")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content cannot be empty")
+        if len(v) > _MAX_CONFIG_CONTENT:
+            raise ValueError(f"content exceeds {_MAX_CONFIG_CONTENT} characters")
+        return v
+
+
+class ConfigResponse(BaseModel):
+    """Full config response with content."""
+    name: str
+    type: str
+    content: str
+    description: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConfigListItem(BaseModel):
+    """Config list item (no content)."""
+    name: str
+    type: str
+    description: str
+    updated_at: datetime

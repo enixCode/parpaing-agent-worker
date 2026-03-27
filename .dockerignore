@@ -8,11 +8,9 @@ __pycache__
 node_modules
 tests/
 docs/
-hooks/
-profiles/
-templates/
 .github/
 .vscode/
 .pytest_cache/
+.secretmask/
 *.md
 LICENSE

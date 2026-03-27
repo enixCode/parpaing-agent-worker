@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Parpaing Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23ff6b2c'/><rect x='2' y='3' width='12' height='10' rx='1' fill='%2317150f'/><rect x='18' y='3' width='12' height='10' rx='1' fill='%2317150f'/><rect x='8' y='17' width='16' height='12' rx='1' fill='%2317150f'/></svg>">
@@ -372,6 +373,87 @@ input, select, textarea { font-family: var(--font-body); }
 .toast.success { border-left-color: var(--green); color: var(--green); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
 
+/* ===== PANEL SWITCHER ===== */
+.panel-switcher {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px;
+}
+.panel-switch {
+  flex: 1; padding: 10px 8px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); background: none; border: none;
+  border-bottom: 2px solid transparent; transition: all 0.15s;
+  text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer;
+}
+.panel-switch:hover { color: var(--text-muted); }
+.panel-switch.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel-content { display: none; }
+.panel-content.active { display: block; }
+
+/* ===== CONFIG PANEL ===== */
+.config-type-tabs {
+  display: flex; gap: 0; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.config-type-tab {
+  padding: 6px 10px; font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-dim); background: none; border: none;
+  border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.config-type-tab:hover { color: var(--text-muted); }
+.config-type-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.config-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer;
+  transition: all 0.15s; background: var(--bg);
+}
+.config-item:hover { border-color: var(--accent); background: var(--bg-elevated); }
+.config-item-name {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.config-item-desc {
+  font-size: 10px; color: var(--text-dim); flex: 2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.config-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.config-item-actions button {
+  background: none; border: 1px solid var(--border); color: var(--text-dim);
+  font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; cursor: pointer;
+  transition: all 0.15s;
+}
+.config-item-actions .cfg-del:hover { color: var(--red); border-color: var(--red); }
+.config-empty {
+  padding: 30px 16px; text-align: center; color: var(--text-dim);
+  font-family: var(--font-mono); font-size: 11px;
+}
+
+/* ===== CONFIG EDITOR (main area) ===== */
+.cfg-editor-header {
+  padding: 14px 20px; border-bottom: 2px solid var(--border); background: var(--bg-surface);
+}
+.cfg-editor-header h2 {
+  font-family: var(--font-display); font-size: 14px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.cfg-editor-empty { padding: 80px 40px; text-align: center; }
+.cfg-editor-body {
+  display: flex; flex-direction: column; height: calc(100vh - 56px - 52px);
+  padding: 16px 20px; gap: 12px;
+}
+.cfg-editor-meta { display: flex; gap: 16px; flex-shrink: 0; }
+.cfg-editor-meta .form-group { flex: 1; }
+.cfg-editor-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.cfg-editor-content textarea {
+  flex: 1; width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text); padding: 14px; font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.7; resize: none; tab-size: 2;
+}
+.cfg-editor-content textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow);
+}
+.cfg-editor-actions {
+  display: flex; gap: 10px; flex-shrink: 0; padding-top: 4px;
+}
+
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner {
@@ -413,9 +495,15 @@ input, select, textarea { font-family: var(--font-body); }
 <div class="toast-container" id="toastContainer"></div>
 
 <div class="container">
-  <!-- Left: Create Panel -->
+  <!-- Left: Create Panel + Configs -->
   <div class="panel create-panel">
-    <h2>New Job</h2>
+    <div class="panel-switcher">
+      <button class="panel-switch active" data-panel="jobs">New Job</button>
+      <button class="panel-switch" data-panel="configs">Configs</button>
+    </div>
+
+    <!-- Job creation panel -->
+    <div class="panel-content active" id="panelJobs">
     <form id="createForm" autocomplete="off">
       <div class="form-group">
         <label>Agent ID</label>
@@ -477,14 +565,33 @@ input, select, textarea { font-family: var(--font-body); }
           <input type="checkbox" id="fDryRun" /> Dry run
         </label>
       </div>
-      <button type="submit" class="btn btn-primary" id="createBtn" style="width:100%;margin-top:12px;">
-        Deploy Job
-      </button>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button type="submit" class="btn btn-primary" id="createBtn" style="flex:1;">
+          Deploy Job
+        </button>
+        <button type="button" class="btn btn-sm" id="exportJsonBtn" title="Copy job JSON to clipboard">
+          Export JSON
+        </button>
+      </div>
     </form>
+    </div>
+
+    <!-- Config management panel (left: list only) -->
+    <div class="panel-content" id="panelConfigs">
+      <div class="config-type-tabs">
+        <button class="config-type-tab active" data-ctype="profile">Profiles</button>
+        <button class="config-type-tab" data-ctype="engine">Engines</button>
+        <button class="config-type-tab" data-ctype="template">Templates</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="cfgNewBtn" style="width:100%;margin-bottom:12px;">+ New</button>
+      <div id="cfgList"></div>
+    </div>
   </div>
 
-  <!-- Right: Stats + Job list + detail -->
+  <!-- Right: Stats + Job list + detail / Config editor -->
   <div class="main">
+    <!-- Job area (visible when Jobs tab active) -->
+    <div id="mainJobs">
     <div class="stats-bar">
       <div class="stat" data-stat-filter="running">
         <span class="stat-value running" id="sRunning">0</span>
@@ -562,6 +669,39 @@ input, select, textarea { font-family: var(--font-body); }
         </div>
       </div>
     </div>
+    </div>
+
+    <!-- Config editor (visible when Configs tab active) -->
+    <div id="mainConfigs" style="display:none;">
+      <div class="cfg-editor-header">
+        <h2 id="cfgEditorTitle">Select a config</h2>
+      </div>
+      <div class="cfg-editor-empty" id="cfgEditorEmpty">
+        <div class="no-jobs-icon">&#9881;</div>
+        <div class="no-jobs-text">Select a config to view or edit</div>
+        <div class="no-jobs-sub">Use the list on the left, or click + New</div>
+      </div>
+      <div class="cfg-editor-body" id="cfgEditorBody" style="display:none;">
+        <div class="cfg-editor-meta">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="cfgName" placeholder="my-config" />
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="cfgDesc" placeholder="Short description" />
+          </div>
+        </div>
+        <div class="cfg-editor-content">
+          <label style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;display:block;">Content</label>
+          <textarea id="cfgContent" placeholder="TOML or Jinja2 content..."></textarea>
+        </div>
+        <div class="cfg-editor-actions">
+          <button class="btn btn-primary" id="cfgSaveBtn">Save</button>
+          <button class="btn" id="cfgCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -632,10 +772,10 @@ let detailRefreshTimer = null;
 let firstLoad = true;
 
 // --- API Key persistence ---
-const savedKey = localStorage.getItem('parpaing_api_key');
+const savedKey = sessionStorage.getItem('parpaing_api_key');
 if (savedKey) document.getElementById('apiKey').value = savedKey;
 document.getElementById('apiKey').addEventListener('change', (e) => {
-  localStorage.setItem('parpaing_api_key', e.target.value);
+  sessionStorage.setItem('parpaing_api_key', e.target.value);
 });
 
 // --- Health ---
@@ -685,7 +825,7 @@ async function loadMeta() {
 
     const pSel = document.getElementById('fProfile');
     pSel.innerHTML = profiles.map(p =>
-      `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.description ? ' \u2014 ' + escapeHtml(p.description) : ''}</option>`
+      `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.description ? ' -' + escapeHtml(p.description) : ''}</option>`
     ).join('');
 
   } catch { /* ignore */ }
@@ -735,13 +875,8 @@ document.getElementById('advToggle').addEventListener('click', () => {
   t.innerHTML = (open ? '&#9660;' : '&#9654;') + ' Advanced';
 });
 
-// --- Create job ---
-document.getElementById('createForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('createBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Deploying...';
-
+// --- Build job body from form ---
+function buildJobBody() {
   const body = {
     agent_id: document.getElementById('fAgentId').value,
     engine: document.getElementById('fEngine').value,
@@ -769,6 +904,29 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
   const wh = document.getElementById('fWebhook').value.trim();
   if (wh) body.webhook_url = wh;
   if (document.getElementById('fDryRun').checked) body.dry_run = true;
+  return body;
+}
+
+// --- Export JSON ---
+document.getElementById('exportJsonBtn').addEventListener('click', () => {
+  const body = buildJobBody();
+  const json = JSON.stringify(body, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    toast('JSON copied to clipboard', 'success');
+  }).catch(() => {
+    // Fallback: show in prompt
+    prompt('Job JSON:', json);
+  });
+});
+
+// --- Create job ---
+document.getElementById('createForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('createBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Deploying...';
+
+  const body = buildJobBody();
 
   try {
     const res = await api('/jobs', { method: 'POST', body: JSON.stringify(body) });
@@ -812,7 +970,7 @@ function renderJobs(jobs, total) {
     list.innerHTML = jobs.map(j => `
       <div class="job-row${j.job_id === selectedJobId ? ' selected' : ''}" data-id="${escapeHtml(j.job_id)}">
         <div class="job-id">${escapeHtml(j.job_id)}</div>
-        <div><span class="status-badge status-${j.status}">${j.status}</span></div>
+        <div><span class="status-badge status-${j.status.replace(/[^a-z0-9-]/gi, '')}">${j.status}</span></div>
         <div class="job-engine">${escapeHtml(j.engine || '-')}</div>
         <div class="job-engine">${escapeHtml(j.profile || '-')}</div>
         <div class="job-time">${relTime(j.created_at)}</div>
@@ -912,7 +1070,12 @@ function renderMarkdown(md) {
   html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    if (/^https?:\/\//i.test(url)) {
+      return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${text}</a>`;
+    }
+    return text;
+  });
   html = html.replace(/\n\n/g, '</p><p>');
   html = '<p>' + html + '</p>';
   html = html.replace(/<p>\s*<\/p>/g, '');
@@ -946,7 +1109,7 @@ function extractChat(result) {
     if (texts.length) return texts.join('\n\n');
   }
   if (r && r.dry_run) {
-    return `**Dry run** \u2014 engine: \`${r.engine || '?'}\`\n\nCommand: \`${r.binary || '?'} ${(r.args || []).join(' ')}\``;
+    return `**Dry run** -engine: \`${r.engine || '?'}\`\n\nCommand: \`${r.binary || '?'} ${(r.args || []).join(' ')}\``;
   }
   if (result.logs) return result.logs;
   return null;
@@ -960,7 +1123,7 @@ function renderDetail(job) {
 
   const statusEl = document.getElementById('detailStatus');
   statusEl.textContent = job.status;
-  statusEl.className = 'status-badge status-' + job.status;
+  statusEl.className = 'status-badge status-' + job.status.replace(/[^a-z0-9-]/gi, '');
 
   const cancelBtn = document.getElementById('detailCancel');
   cancelBtn.style.display = (job.status === 'pending' || job.status === 'running') ? 'inline-block' : 'none';
@@ -985,7 +1148,7 @@ function renderDetail(job) {
   if (chatText) {
     chatViewer.innerHTML = renderMarkdown(chatText);
   } else if (job.status === 'pending' || job.status === 'running') {
-    chatViewer.innerHTML = '<span class="chat-empty">// ' + job.status + ' - awaiting response</span>';
+    chatViewer.innerHTML = '<span class="chat-empty">// ' + escapeHtml(job.status) + ' - awaiting response</span>';
   } else {
     chatViewer.innerHTML = '<span class="chat-empty">// no response</span>';
   }
@@ -1041,6 +1204,158 @@ document.getElementById('detailCancel').addEventListener('click', async () => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('detailPanel').classList.contains('open')) {
     document.getElementById('detailClose').click();
+  }
+});
+
+// --- Panel switcher ---
+document.querySelectorAll('.panel-switch').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.panel-switch').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel' + btn.dataset.panel.charAt(0).toUpperCase() + btn.dataset.panel.slice(1)).classList.add('active');
+    // Toggle main area: jobs vs configs
+    const isConfigs = btn.dataset.panel === 'configs';
+    document.getElementById('mainJobs').style.display = isConfigs ? 'none' : '';
+    document.getElementById('mainConfigs').style.display = isConfigs ? '' : 'none';
+    if (isConfigs) { loadConfigs(); closeCfgEditor(); }
+  });
+});
+
+// --- Config management ---
+let cfgCurrentType = 'profile';
+let cfgEditMode = null; // null | 'create' | 'edit'
+let cfgEditName = null;
+
+// Config type tabs
+document.querySelectorAll('.config-type-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.config-type-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    cfgCurrentType = tab.dataset.ctype;
+    closeCfgEditor();
+    loadConfigs();
+  });
+});
+
+async function loadConfigs() {
+  try {
+    const res = await api('/configs?type=' + cfgCurrentType);
+    const data = await res.json();
+    renderConfigs(data.configs || []);
+  } catch (err) {
+    toast('Error loading configs: ' + err.message);
+  }
+}
+
+function renderConfigs(configs) {
+  const list = document.getElementById('cfgList');
+  if (configs.length === 0) {
+    list.innerHTML = '<div class="config-empty">No configs</div>';
+    return;
+  }
+  list.innerHTML = configs.map(c => `
+    <div class="config-item" data-cfg-name="${escapeHtml(c.name)}">
+      <div class="config-item-name">${escapeHtml(c.name)}</div>
+      <div class="config-item-desc">${escapeHtml(c.description || '')}</div>
+      <div class="config-item-actions">
+        <button class="btn-sm cfg-del" data-cfg-del="${escapeHtml(c.name)}">X</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Click config item to edit
+document.getElementById('cfgList').addEventListener('click', async (e) => {
+  const delBtn = e.target.closest('[data-cfg-del]');
+  if (delBtn) {
+    e.stopPropagation();
+    const name = delBtn.dataset.cfgDel;
+    if (!confirm('Delete ' + cfgCurrentType + '/' + name + '?')) return;
+    try {
+      await api('/configs/' + cfgCurrentType + '/' + encodeURIComponent(name), { method: 'DELETE' });
+      toast('Deleted: ' + cfgCurrentType + '/' + name, 'success');
+      loadConfigs();
+      closeCfgEditor();
+      loadMeta();
+    } catch (err) {
+      toast('Delete error: ' + err.message);
+    }
+    return;
+  }
+  const item = e.target.closest('.config-item');
+  if (!item) return;
+  const name = item.dataset.cfgName;
+  // Highlight selected
+  document.querySelectorAll('.config-item').forEach(i => i.style.borderColor = '');
+  item.style.borderColor = 'var(--accent)';
+  try {
+    const res = await api('/configs/' + cfgCurrentType + '/' + encodeURIComponent(name));
+    const cfg = await res.json();
+    openCfgEditor('edit', cfg);
+  } catch (err) {
+    toast('Error: ' + err.message);
+  }
+});
+
+// New config button
+document.getElementById('cfgNewBtn').addEventListener('click', () => {
+  document.querySelectorAll('.config-item').forEach(i => i.style.borderColor = '');
+  openCfgEditor('create', {});
+});
+
+function openCfgEditor(mode, cfg) {
+  cfgEditMode = mode;
+  cfgEditName = cfg.name || null;
+  const title = document.getElementById('cfgEditorTitle');
+  title.textContent = mode === 'create' ? 'New ' + cfgCurrentType : cfgCurrentType + ' / ' + (cfg.name || '');
+  const nameInput = document.getElementById('cfgName');
+  nameInput.value = cfg.name || '';
+  nameInput.readOnly = (mode === 'edit');
+  nameInput.style.opacity = mode === 'edit' ? '0.6' : '1';
+  document.getElementById('cfgDesc').value = cfg.description || '';
+  document.getElementById('cfgContent').value = cfg.content || '';
+  document.getElementById('cfgEditorEmpty').style.display = 'none';
+  document.getElementById('cfgEditorBody').style.display = '';
+}
+
+function closeCfgEditor() {
+  cfgEditMode = null;
+  cfgEditName = null;
+  document.getElementById('cfgEditorEmpty').style.display = '';
+  document.getElementById('cfgEditorBody').style.display = 'none';
+  document.getElementById('cfgEditorTitle').textContent = 'Select a config';
+  document.querySelectorAll('.config-item').forEach(i => i.style.borderColor = '');
+}
+
+document.getElementById('cfgCancelBtn').addEventListener('click', closeCfgEditor);
+
+document.getElementById('cfgSaveBtn').addEventListener('click', async () => {
+  const name = document.getElementById('cfgName').value.trim();
+  const desc = document.getElementById('cfgDesc').value.trim();
+  const content = document.getElementById('cfgContent').value;
+  if (!name) { toast('Name is required'); return; }
+  if (!content.trim()) { toast('Content is required'); return; }
+
+  try {
+    if (cfgEditMode === 'create') {
+      await api('/configs/' + cfgCurrentType, {
+        method: 'POST',
+        body: JSON.stringify({ name, content, description: desc }),
+      });
+      toast('Created: ' + cfgCurrentType + '/' + name, 'success');
+    } else {
+      await api('/configs/' + cfgCurrentType + '/' + encodeURIComponent(cfgEditName), {
+        method: 'PUT',
+        body: JSON.stringify({ content, description: desc }),
+      });
+      toast('Updated: ' + cfgCurrentType + '/' + cfgEditName, 'success');
+    }
+    closeCfgEditor();
+    loadConfigs();
+    loadMeta();
+  } catch (err) {
+    toast('Save error: ' + err.message);
   }
 });
 

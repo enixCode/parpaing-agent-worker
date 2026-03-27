@@ -39,3 +39,18 @@ CREATE TABLE containers (
 );
 
 CREATE INDEX idx_containers_status ON containers (status, created_at);
+
+-- Config store (profiles, engines, templates - managed via API)
+CREATE TYPE config_type AS ENUM ('profile', 'engine', 'template');
+
+CREATE TABLE configs (
+    name        TEXT NOT NULL,
+    type        config_type NOT NULL,
+    content     TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (name, type)
+);
+
+CREATE INDEX idx_configs_type ON configs (type);

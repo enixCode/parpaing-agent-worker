@@ -1,15 +1,20 @@
-FROM node:22-slim
+FROM node:22-bookworm
 
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates curl jq gnupg2 dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
+    && find / -xdev -perm -4000 -type f -exec chmod u-s {} \; 2>/dev/null || true \
+    && find / -xdev -perm -2000 -type f -exec chmod g-s {} \; 2>/dev/null || true
 
 # Engine: Claude Code
 RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 
 # Engine: OpenCode
-RUN curl -fsSL https://opencode.ai/install | bash 2>/dev/null || true
+RUN curl -fsSL https://opencode.ai/install | bash \
+    && cp $(find / -name opencode -type f 2>/dev/null | head -1) /usr/local/bin/opencode \
+    && opencode version
 
 ENV CLAUDE_CODE_DISABLE_TELEMETRY=1
 ENV DISABLE_AUTOUPDATER=1
@@ -27,4 +32,4 @@ RUN echo "agent:x:1000:1000:agent:/home/agent:/bin/sh" >> /etc/passwd \
 WORKDIR /workspace
 USER agent
 
-ENTRYPOINT ["/opt/entrypoint.sh"]
+ENTRYPOINT ["dumb-init", "--", "/opt/entrypoint.sh"]
