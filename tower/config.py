@@ -27,7 +27,7 @@ def _clamp_float(name: str, val: float, lo: float, hi: float) -> float:
         return clamped
     return val
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 DEFAULT_MODEL = "claude-sonnet-4-6"
 WORKER_IMAGE = os.environ.get("WORKER_IMAGE", "agent-worker-worker")
 PROFILES_DIR = Path(os.environ.get("PROFILES_DIR", "/app/profiles"))
