@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from ..models import JobResponse, AgentRunRequest
 
 import asyncpg
@@ -88,6 +89,12 @@ class JobStore:
         """Initialize connection pool."""
         self._pool = await asyncpg.create_pool(self._dsn, min_size=DB_POOL_MIN_SIZE, max_size=DB_POOL_MAX_SIZE)
         logger.info("Connected to PostgreSQL")
+
+    async def ensure_schema(self, schema_path: Path):
+        """Execute schema file (idempotent - safe to re-run)."""
+        sql = schema_path.read_text()
+        await self._pool.execute(sql)
+        logger.info("Schema verified")
 
     @property
     def db_pool(self) -> asyncpg.Pool:

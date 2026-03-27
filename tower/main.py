@@ -21,7 +21,7 @@ import jinja2
 from .config import (
     VERSION, MAX_CONCURRENT_JOBS, JOB_TTL_HOURS, MAX_RETAINED_JOBS,
     DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH,
-    GATEWAY_URL, PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR, docker_client,
+    GATEWAY_URL, PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR, SCHEMA_PATH, docker_client,
 )
 from .store import JobStore, JobStatus, ContainerPool, ConfigStore
 from .runner import execute_job, recover_jobs, cleanup_loop
@@ -60,6 +60,7 @@ _WAIT_POLL_INTERVAL = 2
 async def lifespan(app):
     """Startup and shutdown lifecycle."""
     await store.connect()
+    await store.ensure_schema(SCHEMA_PATH)
     await ConfigStore.init(store.db_pool)
     await ConfigStore.instance().seed_from_files(PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR)
     await pool.start(store.db_pool)

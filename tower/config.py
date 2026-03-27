@@ -34,6 +34,7 @@ PROFILES_DIR = Path(os.environ.get("PROFILES_DIR", "/app/profiles"))
 TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))
 HOOKS_DIR = Path(os.environ.get("HOOKS_DIR", "/app/hooks"))
 ENGINES_DIR = Path(os.environ.get("ENGINES_DIR", "/app/engines"))
+SCHEMA_PATH = Path(os.environ.get("SCHEMA_PATH", "/app/db/init.sql"))
 UI_PATH = Path(os.environ.get("UI_PATH", "/app/ui/index.html"))
 WORKER_NET = os.environ.get("WORKER_NET", "agent-workers")
 

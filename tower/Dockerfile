@@ -9,6 +9,7 @@ COPY tower/ ./tower/
 COPY profiles/ ./profiles/
 COPY templates/ ./templates/
 COPY engines/ ./engines/
+COPY db/ ./db/
 COPY hooks/ ./hooks/
 COPY ui/ ./ui/
 

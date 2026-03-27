@@ -40,6 +40,7 @@ services:
       - ./templates:/app/templates:ro
       - ./hooks:/app/hooks:ro
       - ./engines:/app/engines:ro
+      - ./db:/app/db:ro
       - ./ui:/app/ui:ro
     env_file: .env
     environment:
