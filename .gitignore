@@ -6,5 +6,6 @@ node_modules/
 .DS_Store
 .vscode/
 .claude/
+*.egg-info/
 .secretmask/
 TODO.md

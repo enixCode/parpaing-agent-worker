@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-worker"
+version = "0.4.0"
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+include = ["tower*"]
