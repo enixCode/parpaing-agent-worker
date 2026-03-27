@@ -27,7 +27,9 @@ jobs:
 
       - run: pip install mkdocs-material
 
-      - run: cp README.md docs/index.md
+      - run: |
+          cp README.md docs/index.md
+          sed -i 's|src="docs/|src="|g' docs/index.md
 
       - run: mkdocs build
 
