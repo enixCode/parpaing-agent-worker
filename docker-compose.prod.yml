@@ -50,7 +50,7 @@ services:
 
   gateway:
     image: nginx:alpine
-    container_name: agent-gateway
+    container_name: ${GATEWAY_CONTAINER:-agent-gateway}
     restart: always
     volumes:
       - ./gateway/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
