@@ -136,8 +136,8 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 Key directories (use `ls` for full listing):
 
 - `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles, metrics
-  - `tower/store/` - Persistence layer: jobs (job_store), pool (container pool), configs (config store)
-  - `tower/runner/` - Execution layer: executor (job_runner), worker (config injection/extraction)
+  - `tower/store/` - Persistence layer: jobs.py, pool.py, configs.py
+  - `tower/runner/` - Execution layer: executor.py, worker.py (config injection/extraction)
 - `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
 - `engines/` - Engine configs (TOML) - one per AI tool
 - `profiles/` - Agent profiles (TOML) - define defaults per use case
@@ -146,9 +146,10 @@ Key directories (use `ls` for full listing):
 - `db/` - PostgreSQL schema (init.sql: jobs + containers + configs tables)
 - `gateway/` - LLM Gateway (nginx reverse proxy, hides API keys)
 - `ui/` - Web dashboard (single HTML file)
-- `docs/` - Documentation (mkdocs)
+- `docs/` - Documentation (mkdocs): index, api, request, profiles, templates, config, security
 - `tests/unit/` - Unit tests (no Docker required)
 - `tests/test_e2e_*.py` - E2E tests (requires docker compose up)
+- `docker-compose.prod.yml` - Production overrides
 
 ## Commands
 
@@ -241,7 +242,7 @@ run-job.sh (7 steps):
 
 ## Constants (config.py - single source of truth)
 
-- `VERSION = "0.3.0"`
+- `VERSION = "0.4.0"`
 - `DEFAULT_MODEL = "claude-sonnet-4-6"`
 
 ## Code Conventions
@@ -270,9 +271,12 @@ Essential vars (see `.env.example` for the full list with defaults):
 | `TOWER_API_KEY` | Bearer token for API auth (empty = no auth) |
 | `ANTHROPIC_API_KEY` | API key (pay-per-token) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token (Pro/Max subscription) |
+| `OPENAI_API_KEY` | OpenAI API key (OpenCode engine) |
 | `MAX_CONCURRENT_JOBS` | Max parallel containers per Tower instance (default: 10) |
 | `POOL_SIZE` | Warm containers in pool (default: 3) |
 | `WORKER_RUNTIME` | gVisor runtime - set to "runsc" for kernel-level isolation |
+| `GATEWAY_CONTAINER` | Gateway container name (default: agent-gateway) |
+| `CONFIG_TIMEOUT` | Seconds worker waits for config injection (default: 300) |
 | `DATABASE_URL` | PostgreSQL connection string |
 
 All numeric config values are auto-clamped to valid ranges at startup (see `config.py` `_clamp_int`/`_clamp_float`). `DB_POOL_MAX_SIZE` auto-sizes to `MAX_CONCURRENT_JOBS * 2 + 5` unless explicitly set.

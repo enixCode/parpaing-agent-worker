@@ -23,6 +23,7 @@ nav:
   - Profiles: profiles.md
   - Templates: templates.md
   - Configuration: config.md
+  - Security: security.md
 
 markdown_extensions:
   - tables

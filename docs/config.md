@@ -41,6 +41,7 @@ All configuration is via environment variables in `.env`.
 | `DB_POOL_MAX_SIZE` | auto | DB_POOL_MIN_SIZE-100 | Maximum DB connections (auto-sized to `max(10, MAX_CONCURRENT_JOBS * 2 + 5)`) |
 | `GATEWAY_URL` | `http://agent-gateway:4000` | - | LLM Gateway URL (validated against SSRF) |
 | `GATEWAY_CONTAINER` | `agent-gateway` | - | Gateway Docker container name |
+| `CONFIG_TIMEOUT` | `300` | 10-3600 | Seconds worker waits for config injection before timing out |
 
 All numeric config values are auto-clamped to valid ranges at startup (see `tower/config.py`). Out-of-bounds values log a warning and are clamped to the nearest valid bound.
 
@@ -48,7 +49,7 @@ All numeric config values are auto-clamped to valid ranges at startup (see `towe
 
 Set `TOWER_API_KEY` to require a bearer token on all endpoints except public ones:
 
-- `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`
+- `/health`, `/metrics`, `/docs`, `/openapi.json`, `/engines`, `/profiles`, `/configs` (GET only)
 - Any path starting with `/ui`
 
 ```env
