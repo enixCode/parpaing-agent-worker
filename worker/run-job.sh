@@ -6,8 +6,8 @@ set -euo pipefail
 # Builds CLI command from engine config in job.json
 # Writes result to /output/result.json
 
-CONFIG_DIR="/tmp/config"
-OUTPUT_DIR="/output"
+CONFIG_DIR="${WORKER_CONFIG_DIR:-/tmp/config}"
+OUTPUT_DIR="${WORKER_OUTPUT_DIR:-/output}"
 WORKSPACE_DIR="/workspace"
 
 echo "[worker] Starting job..."

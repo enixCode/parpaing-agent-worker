@@ -7,6 +7,8 @@ All configuration is via environment variables in `.env`.
 
 | Variable | Default | Range | Description |
 |---|---|---|---|
+| `RUNTIME_MODE` | `compose` | compose, swarm | Runtime backend: `compose` (single-node) or `swarm` (multi-node) |
+| `NFS_JOBS_DIR` | `/parpaing-jobs` | - | NFS mount path for job data (swarm mode only) |
 | `TOWER_PORT` | `8420` | - | Tower exposed port |
 | `TOWER_REPLICAS` | `1` | - | Number of Tower instances (horizontal scaling) |
 | `TOWER_API_KEY` | - | - | Bearer token for API auth (empty = no auth) |
@@ -260,6 +262,60 @@ docker compose build worker
 ```
 
 Workers are ephemeral containers. Rebuilding the image only affects **new** pool containers - running workers continue with the old image until they finish naturally.
+
+## Docker Swarm Deployment
+
+Parpaing supports multi-node Docker Swarm via the `RUNTIME_MODE=swarm` setting. Workers can run on any node in the swarm.
+
+### How it works
+
+- Tower creates Swarm **services** (instead of containers) for each worker
+- Config injection and result extraction use a shared **NFS volume** (instead of `put_archive`/`get_archive`)
+- The worker network uses **overlay** driver (instead of bridge) for cross-node communication
+- Worker completion is detected by **polling service task status** (instead of `container.wait`)
+
+### Quick Start (Swarm)
+
+```bash
+# 1. Initialize swarm
+docker swarm init
+
+# 2. Build and push images (all nodes need access)
+docker compose build worker
+docker compose build tower
+
+# 3. Deploy the stack
+docker stack deploy -c docker-compose.swarm.yml parpaing
+
+# 4. Verify
+curl http://localhost:8420/health
+
+# 5. Remove stack
+docker stack rm parpaing
+```
+
+### Configuration differences
+
+| Setting | Compose | Swarm |
+|---------|---------|-------|
+| `RUNTIME_MODE` | `compose` (default) | `swarm` |
+| `GATEWAY_URL` | `http://agent-gateway:4000` | `http://gateway:4000` (service DNS) |
+| Network driver | bridge | overlay |
+| Config injection | `put_archive` (in-memory) | NFS volume (on disk) |
+| Result extraction | `get_archive` (in-memory) | NFS volume (on disk) |
+| Worker lifecycle | `containers.run` | `services.create` (one-shot) |
+| Gateway name | `container_name` | Service DNS name |
+
+### NFS volume
+
+The NFS service runs on the manager node and provides shared storage for job data. Each job gets an isolated directory:
+
+```
+/parpaing-jobs/{job_id}/config/   - Tower writes, Worker reads (read-only mount)
+/parpaing-jobs/{job_id}/output/   - Worker writes, Tower reads
+```
+
+Directories are cleaned up after job completion.
 
 ## Quick Start
 

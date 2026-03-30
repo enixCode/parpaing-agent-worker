@@ -7,7 +7,9 @@ set -eu
 TIMEOUT=${CONFIG_TIMEOUT:-300}
 ELAPSED=0
 
-while [ ! -f /tmp/config/.ready ]; do
+CONFIG_DIR="${WORKER_CONFIG_DIR:-/tmp/config}"
+
+while [ ! -f "${CONFIG_DIR}/.ready" ]; do
     sleep 0.1
     ELAPSED=$((ELAPSED + 1))
     if [ "$ELAPSED" -ge "$((TIMEOUT * 10))" ]; then

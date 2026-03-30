@@ -1,4 +1,4 @@
-"""Unit tests for worker helpers - config injection and result extraction."""
+"""Unit tests for worker helpers - config file generation and tar extraction."""
 
 import io
 import json
@@ -9,7 +9,7 @@ import pytest
 
 from tower.engines import EngineConfig
 from tower.profiles import JobConfig
-from tower.runner.worker import _build_config_tar, _extract_file_from_archive, extract_result, extract_stderr
+from tower.runner.worker import _build_config_tar, _config_files, _extract_file_from_archive
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +130,55 @@ def _tar_member_mode(data: bytes, name: str) -> int:
     raise KeyError(name)
 
 
-async def _fake_to_thread(func, *args, **kwargs):
-    """Replace asyncio.to_thread: call the function synchronously."""
-    return func(*args, **kwargs)
+# ===========================================================================
+# 0. _config_files (pure function)
+# ===========================================================================
+
+class TestConfigFiles:
+    """Tests for _config_files - pure data generation."""
+
+    def test_minimal_returns_two_files(self, minimal_config):
+        files = _config_files(minimal_config)
+        names = [f[0] for f in files]
+        assert names == ["job.json", ".ready"]
+
+    def test_ready_marker_is_last(self, full_config):
+        files = _config_files(full_config)
+        assert files[-1][0] == ".ready"
+
+    def test_all_files_present(self, full_config):
+        files = _config_files(full_config)
+        names = [f[0] for f in files]
+        assert "job.json" in names
+        assert "mcp.json" in names
+        assert "CLAUDE.md" in names
+        assert "settings.json" in names
+        assert "pre-job.sh" in names
+        assert "post-job.sh" in names
+        assert ".ready" in names
+
+    def test_job_json_content(self, minimal_config):
+        files = _config_files(minimal_config)
+        job_data = json.loads(files[0][1])
+        assert job_data["prompt"] == "Say hello"
+        assert job_data["dry_run"] is False
+
+    def test_dry_run_flag(self, minimal_config):
+        files = _config_files(minimal_config, dry_run=True)
+        job_data = json.loads(files[0][1])
+        assert job_data["dry_run"] is True
+
+    def test_hooks_executable(self, full_config):
+        files = _config_files(full_config)
+        hook_files = {f[0]: f[2] for f in files if f[0].endswith(".sh")}
+        assert hook_files["pre-job.sh"] == 0o755
+        assert hook_files["post-job.sh"] == 0o755
+
+    def test_regular_files_not_executable(self, minimal_config):
+        files = _config_files(minimal_config)
+        for name, _, mode in files:
+            if not name.endswith(".sh"):
+                assert mode == 0o644
 
 
 # ===========================================================================
@@ -380,12 +426,6 @@ class TestExtractFileFromArchive:
 
     @patch("tower.runner.worker.MAX_RESULT_SIZE", 7000)
     def test_oversized_member_returns_empty_with_size(self):
-        """member.size > MAX_RESULT_SIZE but tar fits under streaming cap.
-
-        Tar minimum size is 10240 bytes (20 blocks). With MAX_RESULT_SIZE=7000,
-        streaming cap is 11096 (> 10240). Content of 8000 > 7000 triggers
-        the member.size check.
-        """
         big_content = b"x" * 8000
         stream = _make_tar("result.json", big_content)
         content, size = _extract_file_from_archive(stream)
@@ -394,8 +434,6 @@ class TestExtractFileFromArchive:
 
     @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
     def test_streaming_size_limit(self):
-        """Total stream bytes exceeding MAX_RESULT_SIZE + 4096 triggers early abort."""
-        # Create content larger than 50 + 4096 = 4146 bytes total tar size
         big_content = b"x" * 5000
         stream = _make_tar("result.json", big_content)
         content, size = _extract_file_from_archive(stream)
@@ -403,7 +441,6 @@ class TestExtractFileFromArchive:
         assert size > 50
 
     def test_multiple_chunks(self):
-        """Stream can arrive as multiple chunks."""
         full = _make_tar("result.json", b"hello")[0]
         mid = len(full) // 2
         stream = [full[:mid], full[mid:]]
@@ -416,120 +453,3 @@ class TestExtractFileFromArchive:
         content, size = _extract_file_from_archive(stream)
         assert content == raw
         assert size == 256
-
-
-# ===========================================================================
-# 3. extract_result (async - mock Docker container)
-# ===========================================================================
-
-class TestExtractResult:
-    """Async tests with mocked Docker container."""
-
-    @pytest.mark.asyncio
-    async def test_valid_json(self):
-        result_data = {"status": "completed", "output": "Hello"}
-        tar_stream = _make_tar("result.json", json.dumps(result_data).encode())
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_result(container)
-        assert result == result_data
-
-    @pytest.mark.asyncio
-    async def test_invalid_json_fallback(self):
-        tar_stream = _make_tar("result.json", b"not json {{{")
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_result(container)
-        assert "result_raw" in result
-        assert result["result_raw"] == "not json {{{"
-
-    @pytest.mark.asyncio
-    @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
-    async def test_oversized_returns_error(self):
-        big = b"x" * 200
-        tar_stream = _make_tar("result.json", big)
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_result(container)
-        assert "error" in result
-        assert "too large" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_get_archive_fails_returns_none(self):
-        container = MagicMock()
-        container.get_archive.side_effect = Exception("container gone")
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_result(container)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_binary_content_decoded_with_replace(self):
-        """Binary garbage in result.json should not crash - uses errors='replace'."""
-        binary_data = b"\x80\x81\x82\xff not json"
-        tar_stream = _make_tar("result.json", binary_data)
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_result(container)
-        # Should fallback to result_raw, not crash
-        assert result is not None
-        assert "result_raw" in result
-
-
-# ===========================================================================
-# 4. extract_stderr (async - mock Docker container)
-# ===========================================================================
-
-class TestExtractStderr:
-    """Async tests with mocked Docker container."""
-
-    @pytest.mark.asyncio
-    async def test_valid_stderr(self):
-        tar_stream = _make_tar("stderr.log", b"some warning\n")
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_stderr(container)
-        assert result == "some warning\n"
-
-    @pytest.mark.asyncio
-    @patch("tower.runner.worker.MAX_RESULT_SIZE", 50)
-    async def test_oversized_returns_none(self):
-        big = b"x" * 200
-        tar_stream = _make_tar("stderr.log", big)
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_stderr(container)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_archive_fails_returns_none(self):
-        container = MagicMock()
-        container.get_archive.side_effect = Exception("not found")
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_stderr(container)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_empty_stderr_returns_none(self):
-        tar_stream = _make_tar("stderr.log", b"")
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_stderr(container)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_long_stderr_truncated_to_2000(self):
-        long_text = "A" * 5000
-        tar_stream = _make_tar("stderr.log", long_text.encode())
-        container = MagicMock()
-        container.get_archive.return_value = (tar_stream, None)
-        with patch("tower.runner.worker.asyncio.to_thread", side_effect=_fake_to_thread):
-            result = await extract_stderr(container)
-        assert len(result) == 2000
-        assert result == "A" * 2000

@@ -5,11 +5,8 @@ import logging
 import uuid
 
 import asyncpg
-import docker.errors
 
 from ..config import (
-    docker_client, WORKER_IMAGE, WORKER_NET,
-    WORKER_MEM_LIMIT, WORKER_CPU_LIMIT, WORKER_RUNTIME,
     GATEWAY_URL, GATEWAY_CONTAINER,
     POOL_SIZE, POOL_CHECK_INTERVAL, POOL_MAX_IDLE,
 )
@@ -23,24 +20,29 @@ class ContainerPool:
     The pool is DB-backed (containers table), so multiple Tower instances
     share the same pool. Acquire is atomic (FOR UPDATE SKIP LOCKED).
 
-    All workers share a single Docker bridge network (internal=true, ICC=true).
-    Internal blocks internet access; ICC allows workers to reach the gateway.
-    Worker-level isolation relies on cap_drop=ALL, non-root, PID limit, private IPC.
+    Docker operations are delegated to the Runtime abstraction, allowing
+    different backends (Compose, Swarm, K8s).
     """
 
-    def __init__(self):
+    def __init__(self, runtime):
+        self._runtime = runtime
         self._pool: asyncpg.Pool = None  # type: ignore[assignment]
         self._task: asyncio.Task | None = None
         self._network_id: str = ""
 
+    @property
+    def runtime(self):
+        """Runtime instance for use by executor."""
+        return self._runtime
+
     async def start(self, db_pool: asyncpg.Pool):
         """Attach to shared DB pool, ensure network, clean stale, fill pool, start maintenance."""
         self._pool = db_pool
-        self._network_id = await asyncio.to_thread(self._ensure_network)
+        self._network_id = await self._runtime.ensure_network()
         await self._cleanup_stale()
         await self._fill()
         self._task = asyncio.create_task(self._maintain_loop())
-        logger.info("Container pool started (target size: %d, network: %s)", POOL_SIZE, WORKER_NET)
+        logger.info("Container pool started (target size: %d)", POOL_SIZE)
 
     async def shutdown(self):
         """Stop maintenance. Leave containers and network alive for re-adoption."""
@@ -73,29 +75,25 @@ class ContainerPool:
             )
             if not row:
                 break
-            # Verify container is still alive (handles external kills)
-            try:
-                c = await asyncio.to_thread(docker_client().containers.get, row["container_id"])
-                if c.status in ("running", "created"):
-                    return row["container_id"], row["network_id"]
-            except Exception:
-                await self._pool.execute(
-                    "DELETE FROM containers WHERE container_id = $1", row["container_id"],
-                )
-                logger.warning("Pool: skipped dead container %s", row["container_id"][:12])
+            if await self._runtime.worker_alive(row["container_id"]):
+                return row["container_id"], row["network_id"]
+            await self._pool.execute(
+                "DELETE FROM containers WHERE container_id = $1", row["container_id"],
+            )
+            logger.warning("Pool: skipped dead container %s", row["container_id"][:12])
 
         # Pool exhausted or all dead - create on-demand
         logger.warning("Pool exhausted, creating container on-demand")
         container_id = await self._create_warm(status="busy")
         return container_id, self._network_id
 
-    async def release(self, container_id: str):
+    async def release(self, container_id: str, job_id: str = ""):
         """Destroy container, remove from DB. Network is shared - left alive."""
         await self._pool.execute(
             "DELETE FROM containers WHERE container_id = $1",
             container_id,
         )
-        await self._destroy_container(container_id)
+        await self._runtime.destroy_worker(container_id, job_id=job_id)
         logger.info("Pool: released container %s", container_id[:12])
 
     # --- Maintenance ---
@@ -138,7 +136,7 @@ class ContainerPool:
             POOL_MAX_IDLE,
         )
         for row in rows:
-            await self._destroy_container(row["container_id"])
+            await self._runtime.destroy_worker(row["container_id"])
         if rows:
             logger.info("Pool: pruned %d stale containers", len(rows))
 
@@ -150,9 +148,7 @@ class ContainerPool:
         tracked_ids = {row["container_id"] for row in rows}
         removed = 0
         for row in rows:
-            try:
-                docker_client().containers.get(row["container_id"])
-            except Exception:
+            if not await self._runtime.worker_alive(row["container_id"]):
                 await self._pool.execute("DELETE FROM containers WHERE id = $1", row["id"])
                 tracked_ids.discard(row["container_id"])
                 removed += 1
@@ -160,59 +156,22 @@ class ContainerPool:
             logger.info("Pool startup: cleaned %d stale DB entries", removed)
 
         # 2. Docker -> DB: remove orphaned agent-* containers not in DB
-        orphans = await asyncio.to_thread(
-            docker_client().containers.list,
-            all=True,
-            filters={"name": "agent-", "status": ["created", "exited"]},
-        )
-        orphan_count = 0
-        for c in orphans:
-            if c.id not in tracked_ids:
-                try:
-                    await asyncio.to_thread(c.remove, force=True)
-                    orphan_count += 1
-                except Exception:
-                    pass
-        if orphan_count:
-            logger.info("Pool startup: removed %d orphaned containers", orphan_count)
+        orphan_ids = await self._runtime.list_orphan_workers(tracked_ids)
+        for oid in orphan_ids:
+            await self._runtime.destroy_worker(oid)
+        if orphan_ids:
+            logger.info("Pool startup: removed %d orphaned containers", len(orphan_ids))
 
-    # --- Docker operations ---
+        # 3. Clean up orphan job directories (crash recovery)
+        active_names = set()
+        for row in await self._pool.fetch("SELECT container_id FROM containers"):
+            active_names.add(self._runtime._resolve_name(row["container_id"]))
+        await self._runtime.cleanup_orphan_dirs(active_names)
 
-    @staticmethod
-    def _ensure_network() -> str:
-        """Create or find the shared worker network. Returns network ID.
-
-        Validates existing networks have the correct config (internal, ICC enabled).
-        Recreates the network if settings are wrong.
-        """
-        try:
-            net = docker_client().networks.get(WORKER_NET)
-            attrs = net.attrs or {}
-            is_internal = attrs.get("Internal", False)
-            if is_internal:
-                logger.info("Using existing worker network: %s", WORKER_NET)
-                return net.id
-            # Network exists but has wrong config - recreate
-            logger.warning("Worker network %s is not internal, recreating", WORKER_NET)
-            net.remove()
-        except docker.errors.NotFound:
-            pass
-        except docker.errors.APIError as e:
-            if "has active endpoints" in str(e):
-                logger.warning("Cannot recreate worker network (active containers) - using as-is")
-                return docker_client().networks.get(WORKER_NET).id
-            raise
-        net = docker_client().networks.create(
-            WORKER_NET,
-            driver="bridge",
-            internal=True,
-        )
-        logger.info("Created worker network: %s (internal=true)", WORKER_NET)
-        return net.id
+    # --- Container creation ---
 
     async def _create_warm(self, status: str = "ready") -> str:
         """Create a warm container on the shared network, insert into DB. Returns container_id."""
-        # Workers get placeholder keys + base URL override (gateway injects real keys)
         gateway = GATEWAY_URL.rstrip("/")
         env = {
             "ANTHROPIC_BASE_URL": f"{gateway}/anthropic",
@@ -221,72 +180,22 @@ class ContainerPool:
             "OPENAI_API_KEY": "gateway",
         }
 
-        # Container config - security always on
-        run_kwargs = dict(
-            image=WORKER_IMAGE,
-            detach=True,
-            environment=env,
-            name=f"agent-warm-{uuid.uuid4().hex[:8]}",
-            network=WORKER_NET,
-            remove=False,
-            mem_limit=WORKER_MEM_LIMIT,
-            nano_cpus=int(WORKER_CPU_LIMIT * 1e9),
-            cap_drop=["ALL"],
-            security_opt=["no-new-privileges:true"],
-            pids_limit=100,
-            ipc_mode="private",
-        )
-
-        # gVisor kernel-level isolation
-        if WORKER_RUNTIME:
-            run_kwargs["runtime"] = WORKER_RUNTIME
-
-        container = await asyncio.to_thread(
-            docker_client().containers.run, **run_kwargs,
-        )
+        name = f"agent-warm-{uuid.uuid4().hex[:8]}"
+        container_id = await self._runtime.create_worker(env, name)
 
         # Connect gateway container to worker network
-        await self._connect_container(GATEWAY_CONTAINER)
+        await self._runtime.connect_to_network(GATEWAY_CONTAINER)
 
         try:
             await self._pool.execute(
                 "INSERT INTO containers (container_id, network_id, status) VALUES ($1, $2, $3)",
-                container.id, self._network_id, status,
+                container_id, self._network_id, status,
             )
         except Exception:
-            logger.exception("Failed to register container %s, destroying orphan", container.id[:12])
+            logger.exception("Failed to register container %s, destroying orphan", container_id[:12])
             try:
-                await asyncio.to_thread(container.remove, force=True)
+                await self._runtime.destroy_worker(container_id)
             except Exception:
-                logger.warning("Failed to cleanup orphaned container %s", container.id[:12])
+                logger.warning("Failed to cleanup orphaned container %s", container_id[:12])
             raise
-        return container.id
-
-    async def _connect_container(self, container_name: str):
-        """Connect a container to the worker network (idempotent)."""
-        try:
-            c = await asyncio.to_thread(
-                docker_client().containers.get, container_name,
-            )
-            net = await asyncio.to_thread(
-                docker_client().networks.get, WORKER_NET,
-            )
-            await asyncio.to_thread(net.connect, c)
-        except docker.errors.APIError as e:
-            if "already exists" not in str(e):
-                logger.warning("Connect %s to worker network failed: %s", container_name, e)
-        except Exception as e:
-            logger.warning("Connect %s to worker network failed: %s", container_name, e)
-
-    async def _destroy_container(self, container_id: str):
-        """Kill + remove a container. Tolerant to failures."""
-        try:
-            c = docker_client().containers.get(container_id)
-            await asyncio.to_thread(c.kill)
-        except Exception:
-            pass
-        try:
-            c = docker_client().containers.get(container_id)
-            await asyncio.to_thread(c.remove)
-        except Exception:
-            pass
+        return container_id

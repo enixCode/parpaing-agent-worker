@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Parpaing** (`enixCode/parpaing-agent-worker`) is a Docker-based orchestration system. **Tower** (FastAPI) receives jobs, dispatches them to isolated **Worker** containers running AI coding agents, and returns results via an async job queue. Supports multiple engines (Claude Code, OpenCode) via TOML-based engine configs. No shared volumes - config is injected via `put_archive`, results are extracted via `get_archive`.
+**Parpaing** (`enixCode/parpaing-agent-worker`) is a Docker-based orchestration system. **Tower** (FastAPI) receives jobs, dispatches them to isolated **Worker** containers running AI coding agents, and returns results via an async job queue. Supports multiple engines (Claude Code, OpenCode) via TOML-based engine configs. Supports Docker Compose (single-node) and Docker Swarm (multi-node) via a Runtime abstraction layer.
 
 ## Architecture
 
@@ -135,9 +135,10 @@ Each worker container runs in isolation. Security hardening is **always enabled*
 
 Key directories (use `ls` for full listing):
 
-- `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles, metrics
+- `tower/` - Orchestrator (FastAPI): main, config, models, engines, profiles, metrics, runtime
+  - `tower/runtime.py` - Runtime abstraction: ABC, ComposeRuntime, SwarmRuntime, factory
   - `tower/store/` - Persistence layer: jobs.py, pool.py, configs.py
-  - `tower/runner/` - Execution layer: executor.py, worker.py (config injection/extraction)
+  - `tower/runner/` - Execution layer: executor.py, worker.py (config file generation)
 - `worker/` - Agent container: Dockerfile, entrypoint.sh, run-job.sh, parse-job.js
 - `engines/` - Engine configs (TOML) - one per AI tool
 - `profiles/` - Agent profiles (TOML) - define defaults per use case
@@ -277,9 +278,23 @@ Essential vars (see `.env.example` for the full list with defaults):
 | `WORKER_RUNTIME` | gVisor runtime - set to "runsc" for kernel-level isolation |
 | `GATEWAY_CONTAINER` | Gateway container name (default: agent-gateway) |
 | `CONFIG_TIMEOUT` | Seconds worker waits for config injection (default: 300) |
+| `RUNTIME_MODE` | Runtime backend: compose (default) or swarm |
+| `NFS_JOBS_DIR` | NFS mount path for swarm mode job data (default: /parpaing-jobs) |
 | `DATABASE_URL` | PostgreSQL connection string |
 
 All numeric config values are auto-clamped to valid ranges at startup (see `config.py` `_clamp_int`/`_clamp_float`). `DB_POOL_MAX_SIZE` auto-sizes to `MAX_CONCURRENT_JOBS * 2 + 5` unless explicitly set.
+
+## Runtime Abstraction (tower/runtime.py)
+
+Docker operations are abstracted behind a `Runtime` interface, allowing different backends:
+
+- **ComposeRuntime** (default): local Docker containers via `put_archive`/`get_archive`. Single-node.
+- **SwarmRuntime**: Swarm services + NFS volumes for config/result. Multi-node.
+- **K8s (future)**: Pods + PV/ConfigMap. Not yet implemented.
+
+`RUNTIME_MODE` env var selects the backend. `ContainerPool` receives a `Runtime` instance and delegates all Docker operations to it. `executor.py` uses `pool.runtime.*` for inject/extract/wait.
+
+Worker image is unchanged across all runtimes - it always reads `/tmp/config/` and writes `/output/`.
 
 ## Config Store (tower/store/configs.py)
 
@@ -371,6 +386,7 @@ Legacy format (`key = "value"`) still supported. Variables are passed to Jinja2 
 When modifying any code, ALWAYS update the related files to keep everything in sync:
 
 - **engines/** changed - configs now in DB, update via /configs API or UI. Update `docs/api.md`, `CLAUDE.md` if new engine added
+- **runtime.py** changed - check if pool.py and executor.py contracts still match, update both ComposeRuntime and SwarmRuntime
 - **engines.py** changed - check if `worker/parse-job.js` contract still matches
 - **models.py** changed - update `db/init.sql`, `docs/request.md`, `CLAUDE.md` if structure changed
 - **Profiles** changed - configs now in DB, update via /configs API or UI. Update `docs/profiles.md`

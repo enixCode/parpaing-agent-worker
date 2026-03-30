@@ -1,10 +1,22 @@
+# Docker Swarm deployment - multi-node with NFS shared storage
+# Usage: docker stack deploy -c docker-compose.swarm.yml parpaing
+#
+# Prerequisites:
+#   1. docker swarm init (on manager node)
+#   2. docker node ls (verify nodes joined)
+#   3. Build worker image: docker compose build worker
+#   4. Push images to registry accessible by all nodes
+#   5. Create .env with POSTGRES_PASSWORD and API keys
+
 services:
   db:
     image: postgres:17-alpine
-    restart: always
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
     volumes:
       - pg-data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-tower}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -18,50 +30,38 @@ services:
       retries: 5
 
   tower:
-    build:
-      context: .
-      dockerfile: tower/Dockerfile
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
+    image: ${TOWER_IMAGE:-ghcr.io/enixcode/parpaing-agent-worker/tower:main}
     deploy:
       replicas: ${TOWER_REPLICAS:-1}
+      placement:
+        constraints: [node.role == manager]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - parpaing-jobs:/parpaing-jobs
+    env_file: .env
+    environment:
+      - RUNTIME_MODE=swarm
+      - JOBS_DIR=/parpaing-jobs
+      - JOBS_VOLUME=parpaing_parpaing-jobs
+      - WORKER_NET=parpaing_agent-workers
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-tower}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-tower}
+      - GATEWAY_URL=http://gateway:4000
+    ports:
+      - "${TOWER_PORT:-8420}:8420"
+    networks:
+      - agent-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 10s
-    stop_grace_period: 30s
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - parpaing-jobs:/parpaing-jobs
-      - ./profiles:/app/profiles:ro
-      - ./templates:/app/templates:ro
-      - ./hooks:/app/hooks:ro
-      - ./engines:/app/engines:ro
-      - ./db:/app/db:ro
-      - ./ui:/app/ui:ro
-    env_file: .env
-    environment:
-      # Container paths (override .env defaults for Docker context)
-      - PROFILES_DIR=/app/profiles
-      - TEMPLATES_DIR=/app/templates
-      - HOOKS_DIR=/app/hooks
-      - ENGINES_DIR=/app/engines
-      - UI_PATH=/app/ui/index.html
-      - JOBS_VOLUME=agent-worker_parpaing-jobs
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-tower}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-tower}
-    ports:
-      - "${TOWER_PORT:-8420}:8420"
-    networks:
-      - agent-net
+      start_period: 15s
 
   gateway:
     image: nginx:alpine
-    container_name: ${GATEWAY_CONTAINER:-agent-gateway}
-    restart: always
+    # No container_name - Swarm uses service DNS (gateway)
+    deploy:
+      replicas: 1
     volumes:
       - ./gateway/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:
@@ -70,19 +70,26 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     networks:
       - agent-net
+      - agent-workers
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
 
-  worker:
-    build: ./worker
-    profiles: ["build-only"]
-
 volumes:
   pg-data:
   parpaing-jobs:
+    # For multi-node: configure NFS driver
+    # driver: local
+    # driver_opts:
+    #   type: nfs
+    #   o: addr=${NFS_SERVER},nfsvers=4,rw
+    #   device: ":/parpaing-jobs"
 
 networks:
   agent-net:
+    driver: overlay
+  agent-workers:
+    driver: overlay
+    internal: true

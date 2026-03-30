@@ -33,6 +33,28 @@ def _make_docker_error(class_name: str, message: str = "something went wrong"):
     return cls(message)
 
 
+def _make_mock_runtime():
+    """Create a mock Runtime with all async methods."""
+    rt = AsyncMock()
+    rt.extract_result = AsyncMock(return_value=None)
+    rt.extract_stderr = AsyncMock(return_value=None)
+    rt.wait_for_completion = AsyncMock(return_value={"StatusCode": 0})
+    rt.get_logs = AsyncMock(return_value="")
+    rt.inject_config = AsyncMock()
+    rt.worker_alive = AsyncMock(return_value=True)
+    rt.destroy_worker = AsyncMock()
+    return rt
+
+
+def _make_mock_pool(runtime=None):
+    """Create a mock pool with a runtime."""
+    pool = MagicMock()
+    pool.runtime = runtime or _make_mock_runtime()
+    pool.acquire = AsyncMock(return_value=("cid-1", "net-1"))
+    pool.release = AsyncMock()
+    return pool
+
+
 # ===================================================================
 # 1. _sanitize_error  (pure function)
 # ===================================================================
@@ -94,78 +116,66 @@ class TestSanitizeErrorPassthrough:
 
 
 # ===================================================================
-# 2. _collect_output  (mock container + worker functions)
+# 2. _collect_output  (mock runtime)
 # ===================================================================
 
 class TestCollectOutput:
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
-    async def test_success(self, mock_result, mock_stderr):
-        mock_result.return_value = {"cost": 0.01, "message": "done"}
-        container = MagicMock()
+    async def test_success(self):
+        runtime = _make_mock_runtime()
+        runtime.extract_result.return_value = {"cost": 0.01, "message": "done"}
 
-        output = await _collect_output("job-1", container, 0, "some logs")
+        output = await _collect_output("job-1", "wid-1", 0, "some logs", runtime)
 
         assert output["exit_code"] == 0
         assert output["result"] == {"cost": 0.01, "message": "done"}
         assert "error" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
-    async def test_failed_no_result(self, mock_result, mock_stderr):
-        container = MagicMock()
+    async def test_failed_no_result(self):
+        runtime = _make_mock_runtime()
 
-        output = await _collect_output("job-2", container, 1, "crash")
+        output = await _collect_output("job-2", "wid-2", 1, "crash", runtime)
 
         assert output["exit_code"] == 1
         assert output["error"] == "Agent exited with code 1"
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
-    async def test_result_with_error_key(self, mock_result, mock_stderr):
-        mock_result.return_value = {"error": "prompt too long"}
-        container = MagicMock()
+    async def test_result_with_error_key(self):
+        runtime = _make_mock_runtime()
+        runtime.extract_result.return_value = {"error": "prompt too long"}
 
-        output = await _collect_output("job-3", container, 1, "")
+        output = await _collect_output("job-3", "wid-3", 1, "", runtime)
 
         assert output["error"] == "prompt too long"
         assert "result" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock)
-    async def test_result_raw_fallback(self, mock_result, mock_stderr):
-        mock_result.return_value = {"result_raw": "not valid json output"}
-        container = MagicMock()
+    async def test_result_raw_fallback(self):
+        runtime = _make_mock_runtime()
+        runtime.extract_result.return_value = {"result_raw": "not valid json output"}
 
-        output = await _collect_output("job-4", container, 0, "")
+        output = await _collect_output("job-4", "wid-4", 0, "", runtime)
 
         assert output["result_raw"] == "not valid json output"
         assert "result" not in output
         assert "error" not in output
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
-    async def test_logs_truncated(self, mock_result, mock_stderr):
+    async def test_logs_truncated(self):
+        runtime = _make_mock_runtime()
         long_logs = "x" * 5000
-        container = MagicMock()
 
-        output = await _collect_output("job-5", container, 0, long_logs)
+        output = await _collect_output("job-5", "wid-5", 0, long_logs, runtime)
 
         assert len(output["logs"]) == 2000
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
-    async def test_stderr_included(self, mock_result, mock_stderr):
-        mock_stderr.return_value = "warning: something"
-        container = MagicMock()
+    async def test_stderr_included(self):
+        runtime = _make_mock_runtime()
+        runtime.extract_stderr.return_value = "warning: something"
 
-        output = await _collect_output("job-6", container, 0, "")
+        output = await _collect_output("job-6", "wid-6", 0, "", runtime)
 
         assert output["stderr"] == "warning: something"
 
@@ -279,83 +289,64 @@ class TestFireWebhook:
 
 
 # ===================================================================
-# 5. _wait_and_finish  (mock container, store, pool)
+# 5. _wait_and_finish  (mock runtime via pool)
 # ===================================================================
-
-async def _fake_to_thread(func, *args, **kwargs):
-    """Replace asyncio.to_thread: call the function synchronously."""
-    return func(*args, **kwargs)
-
 
 class TestWaitAndFinish:
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value={"ok": True})
-    async def test_success_releases_container(self, mock_result, mock_stderr):
-        container = MagicMock()
-        container.wait.return_value = {"StatusCode": 0}
-        container.logs.return_value = b"some logs"
+    async def test_success_releases_container(self):
+        runtime = _make_mock_runtime()
+        runtime.wait_for_completion.return_value = {"StatusCode": 0}
+        runtime.get_logs.return_value = "some logs"
+        runtime.extract_result.return_value = {"ok": True}
+        pool = _make_mock_pool(runtime)
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=True)
-        pool = MagicMock()
-        pool.release = AsyncMock()
 
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=_fake_to_thread):
-            await _wait_and_finish("job-1", "cid-1", container, 60, store, pool)
+        await _wait_and_finish("job-1", "cid-1", 60, store, pool)
 
         store.finish_job.assert_awaited_once()
-        pool.release.assert_awaited_once_with("cid-1")
+        pool.release.assert_awaited_once_with("cid-1", job_id="job-1")
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
-    async def test_failed_exit_code(self, mock_result, mock_stderr):
-        container = MagicMock()
-        container.wait.return_value = {"StatusCode": 1}
-        container.logs.return_value = b"crash"
+    async def test_failed_exit_code(self):
+        runtime = _make_mock_runtime()
+        runtime.wait_for_completion.return_value = {"StatusCode": 1}
+        runtime.get_logs.return_value = "crash"
+        pool = _make_mock_pool(runtime)
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=True)
-        pool = MagicMock()
-        pool.release = AsyncMock()
 
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=_fake_to_thread):
-            await _wait_and_finish("job-2", "cid-2", container, 60, store, pool)
+        await _wait_and_finish("job-2", "cid-2", 60, store, pool)
 
         args = store.finish_job.call_args
         assert args[0][1] == JobStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_timeout_finishes_then_releases(self):
-        container = MagicMock()
-        container.wait.side_effect = lambda: (_ for _ in ()).throw(asyncio.TimeoutError)
+        runtime = _make_mock_runtime()
+        runtime.wait_for_completion.side_effect = asyncio.TimeoutError()
+        pool = _make_mock_pool(runtime)
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=True)
-        pool = MagicMock()
-        pool.release = AsyncMock()
 
-        with patch("tower.runner.executor.asyncio.wait_for", side_effect=asyncio.TimeoutError):
-            await _wait_and_finish("job-3", "cid-3", container, 1, store, pool)
+        await _wait_and_finish("job-3", "cid-3", 1, store, pool)
 
-        # finish_job called before pool.release (correct order)
         store.finish_job.assert_awaited_once()
         assert store.finish_job.call_args[1]["error"] == "Timed out after 1s"
-        pool.release.assert_awaited_once_with("cid-3")
+        pool.release.assert_awaited_once_with("cid-3", job_id="job-3")
 
     @pytest.mark.asyncio
-    @patch("tower.runner.executor.extract_stderr", new_callable=AsyncMock, return_value=None)
-    @patch("tower.runner.executor.extract_result", new_callable=AsyncMock, return_value=None)
-    async def test_already_cancelled_skips_release(self, mock_result, mock_stderr):
+    async def test_already_cancelled_skips_release(self):
         """If finish_job returns False (job already cancelled), skip release."""
-        container = MagicMock()
-        container.wait.return_value = {"StatusCode": 0}
-        container.logs.return_value = b""
+        runtime = _make_mock_runtime()
+        runtime.wait_for_completion.return_value = {"StatusCode": 0}
+        runtime.get_logs.return_value = ""
+        pool = _make_mock_pool(runtime)
         store = MagicMock()
         store.finish_job = AsyncMock(return_value=False)
-        pool = MagicMock()
-        pool.release = AsyncMock()
 
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=_fake_to_thread):
-            await _wait_and_finish("job-4", "cid-4", container, 60, store, pool)
+        await _wait_and_finish("job-4", "cid-4", 60, store, pool)
 
         pool.release.assert_not_awaited()
 
@@ -378,7 +369,7 @@ class TestExecuteJob:
     async def test_cancelled_job_returns_early(self):
         store = MagicMock()
         store.get = AsyncMock(return_value=_make_fake_job("j1", JobStatus.CANCELLED))
-        pool = MagicMock()
+        pool = _make_mock_pool()
         sem = asyncio.Semaphore(1)
 
         await execute_job("j1", store, sem, pool)
@@ -389,7 +380,7 @@ class TestExecuteJob:
     async def test_missing_job_returns_early(self):
         store = MagicMock()
         store.get = AsyncMock(return_value=None)
-        pool = MagicMock()
+        pool = _make_mock_pool()
         sem = asyncio.Semaphore(1)
 
         await execute_job("j2", store, sem, pool)
@@ -399,7 +390,7 @@ class TestExecuteJob:
         store = MagicMock()
         store.get = AsyncMock(return_value=_make_fake_job("j3"))
         store.start_job = AsyncMock(return_value=False)
-        pool = MagicMock()
+        pool = _make_mock_pool()
         sem = asyncio.Semaphore(1)
 
         await execute_job("j3", store, sem, pool)
@@ -408,10 +399,8 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     @patch("tower.runner.executor._wait_and_finish", new_callable=AsyncMock)
-    @patch("tower.runner.executor.inject_config", new_callable=AsyncMock)
     @patch("tower.runner.executor.resolve_config")
-    @patch("tower.runner.executor.get_container")
-    async def test_cancelled_during_acquire_releases(self, mock_get, mock_resolve, mock_inject, mock_wait):
+    async def test_cancelled_during_acquire_releases(self, mock_resolve, mock_wait):
         config = MagicMock()
         config.timeout = 60
         mock_resolve.return_value = config
@@ -422,25 +411,20 @@ class TestExecuteJob:
         store.set_container = AsyncMock(return_value=False)  # cancelled during acquire
         store.finish_job = AsyncMock(return_value=True)
 
-        pool = MagicMock()
-        pool.acquire = AsyncMock(return_value=("cid-4", "net-1"))
-        pool.release = AsyncMock()
+        pool = _make_mock_pool()
         sem = asyncio.Semaphore(1)
 
         mock_duration = MagicMock()
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=_fake_to_thread), \
-             patch("tower.metrics.JOB_DURATION", mock_duration):
+        with patch("tower.metrics.JOB_DURATION", mock_duration):
             await execute_job("j4", store, sem, pool)
 
-        pool.release.assert_awaited_once_with("cid-4")
-        mock_inject.assert_not_awaited()
+        pool.release.assert_awaited_once_with("cid-1", job_id="j4")
+        pool.runtime.inject_config.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("tower.runner.executor._wait_and_finish", new_callable=AsyncMock)
-    @patch("tower.runner.executor.inject_config", new_callable=AsyncMock)
     @patch("tower.runner.executor.resolve_config")
-    @patch("tower.runner.executor.get_container")
-    async def test_exception_releases_and_marks_failed(self, mock_get, mock_resolve, mock_inject, mock_wait):
+    async def test_exception_releases_and_marks_failed(self, mock_resolve, mock_wait):
         mock_resolve.side_effect = ValueError("bad config")
 
         store = MagicMock()
@@ -448,9 +432,8 @@ class TestExecuteJob:
         store.start_job = AsyncMock(return_value=True)
         store.finish_job = AsyncMock(return_value=True)
 
-        pool = MagicMock()
+        pool = _make_mock_pool()
         pool.acquire = AsyncMock()
-        pool.release = AsyncMock()
         sem = asyncio.Semaphore(1)
 
         mock_duration = MagicMock()
@@ -463,7 +446,7 @@ class TestExecuteJob:
 
 
 # ===================================================================
-# 7. recover_jobs  (mock store + docker)
+# 7. recover_jobs  (mock store + runtime)
 # ===================================================================
 
 class TestRecoverJobs:
@@ -473,7 +456,7 @@ class TestRecoverJobs:
         store.get_pending_jobs = AsyncMock(return_value=[])
         store.get_running_jobs = AsyncMock(return_value=[])
         sem = asyncio.Semaphore(1)
-        pool = MagicMock()
+        pool = _make_mock_pool()
 
         await recover_jobs(store, sem, pool)
 
@@ -484,13 +467,11 @@ class TestRecoverJobs:
         store.get_running_jobs = AsyncMock(return_value=[("j1", "cid-dead")])
         store.finish_job = AsyncMock(return_value=True)
         sem = asyncio.Semaphore(1)
-        pool = MagicMock()
+        runtime = _make_mock_runtime()
+        runtime.worker_alive.return_value = False
+        pool = _make_mock_pool(runtime)
 
-        async def fake_to_thread(func, *args):
-            raise docker.errors.NotFound("gone")
-
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=fake_to_thread):
-            await recover_jobs(store, sem, pool)
+        await recover_jobs(store, sem, pool)
 
         store.finish_job.assert_awaited_once()
         assert "container lost" in store.finish_job.call_args[1]["error"]
@@ -502,29 +483,11 @@ class TestRecoverJobs:
         store.get_running_jobs = AsyncMock(return_value=[("j2", None)])
         store.finish_job = AsyncMock(return_value=True)
         sem = asyncio.Semaphore(1)
-        pool = MagicMock()
+        pool = _make_mock_pool()
 
         await recover_jobs(store, sem, pool)
 
         store.finish_job.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_docker_transient_error_skips(self):
-        store = MagicMock()
-        store.get_pending_jobs = AsyncMock(return_value=[])
-        store.get_running_jobs = AsyncMock(return_value=[("j3", "cid-err")])
-        store.finish_job = AsyncMock(return_value=True)
-        sem = asyncio.Semaphore(1)
-        pool = MagicMock()
-
-        async def fake_to_thread(func, *args):
-            raise ConnectionError("docker socket busy")
-
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=fake_to_thread):
-            await recover_jobs(store, sem, pool)
-
-        # Transient error: skipped, not marked failed
-        store.finish_job.assert_not_awaited()
 
 
 # ===================================================================
@@ -536,7 +499,7 @@ class TestReadoptContainer:
     async def test_job_not_found_returns(self):
         store = MagicMock()
         store.get = AsyncMock(return_value=None)
-        pool = MagicMock()
+        pool = _make_mock_pool()
 
         await _readopt_container("j1", "cid-1", store, pool)
 
@@ -550,29 +513,28 @@ class TestReadoptContainer:
         job = _make_fake_job("j2")
         store = MagicMock()
         store.get = AsyncMock(return_value=job)
-        pool = MagicMock()
+        pool = _make_mock_pool()
 
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=_fake_to_thread), \
-             patch("tower.runner.executor.get_container", return_value=MagicMock()):
-            await _readopt_container("j2", "cid-2", store, pool)
+        await _readopt_container("j2", "cid-2", store, pool)
 
         # Should use WORKER_TIMEOUT_SECONDS as fallback
         mock_wait.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_exception_releases_and_marks_failed(self):
+    @patch("tower.runner.executor._wait_and_finish", new_callable=AsyncMock)
+    @patch("tower.runner.executor.resolve_config")
+    async def test_exception_releases_and_marks_failed(self, mock_resolve, mock_wait):
+        mock_resolve.return_value = MagicMock(timeout=60)
+        mock_wait.side_effect = Exception("boom")
         job = _make_fake_job("j3")
         store = MagicMock()
         store.get = AsyncMock(return_value=job)
         store.finish_job = AsyncMock(return_value=True)
-        pool = MagicMock()
-        pool.release = AsyncMock()
+        pool = _make_mock_pool()
 
-        with patch("tower.runner.executor.asyncio.to_thread", side_effect=Exception("boom")), \
-             patch("tower.runner.executor.resolve_config", return_value=MagicMock(timeout=60)):
-            await _readopt_container("j3", "cid-3", store, pool)
+        await _readopt_container("j3", "cid-3", store, pool)
 
-        pool.release.assert_awaited_once_with("cid-3")
+        pool.release.assert_awaited_once_with("cid-3", job_id="j3")
         store.finish_job.assert_awaited_once()
         assert store.finish_job.call_args[0][1] == JobStatus.FAILED
 

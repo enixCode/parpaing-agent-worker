@@ -7,27 +7,29 @@ import pytest
 from tower.store import ContainerPool
 
 
-async def _fake_to_thread(func, *args, **kwargs):
-    """Simulate asyncio.to_thread by calling func synchronously."""
-    return func(*args, **kwargs)
-
-
 class TestPoolStartup:
-    """Pool starts correctly."""
+    """Pool starts correctly with a Runtime instance."""
 
     @pytest.mark.asyncio
     async def test_pool_starts(self):
-        pool = ContainerPool()
+        runtime = AsyncMock()
+        runtime.ensure_network = AsyncMock(return_value="net-123")
+        runtime.worker_alive = AsyncMock(return_value=False)
+        runtime.list_orphan_workers = AsyncMock(return_value=[])
+
+        pool = ContainerPool(runtime)
         db_pool = AsyncMock()
         db_pool.fetch = AsyncMock(return_value=[])
         db_pool.fetchval = AsyncMock(return_value=0)
-        mock_net = MagicMock()
-        mock_net.id = "net-123"
-        mock_docker = MagicMock()
-        mock_docker.networks.get.return_value = mock_net
-        mock_docker.containers.list.return_value = []
-        with patch("tower.store.pool.docker_client", return_value=mock_docker), \
-             patch("tower.store.pool.asyncio.to_thread", side_effect=_fake_to_thread), \
-             patch("tower.store.pool.POOL_SIZE", 0):
+
+        with patch("tower.store.pool.POOL_SIZE", 0):
             await pool.start(db_pool)
             await pool.shutdown()
+
+        runtime.ensure_network.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pool_exposes_runtime(self):
+        runtime = MagicMock()
+        pool = ContainerPool(runtime)
+        assert pool.runtime is runtime

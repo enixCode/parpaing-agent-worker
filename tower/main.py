@@ -21,9 +21,11 @@ import jinja2
 from .config import (
     VERSION, MAX_CONCURRENT_JOBS, JOB_TTL_HOURS, MAX_RETAINED_JOBS,
     DATABASE_URL, TOWER_API_KEY, WORKER_TIMEOUT_SECONDS, UI_PATH,
-    GATEWAY_URL, PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR, SCHEMA_PATH, docker_client,
+    GATEWAY_URL, PROFILES_DIR, ENGINES_DIR, TEMPLATES_DIR, SCHEMA_PATH,
+    RUNTIME_MODE, docker_client,
 )
 from .store import JobStore, JobStatus, ContainerPool, ConfigStore
+from .runtime import create_runtime
 from .runner import execute_job, recover_jobs, cleanup_loop
 from .models import (
     JobCreateRequest, JobCreateResponse, JobResponse,
@@ -46,7 +48,8 @@ if not _log.handlers:
 logger = _log
 
 store = JobStore(dsn=DATABASE_URL, max_retained=MAX_RETAINED_JOBS, ttl_hours=JOB_TTL_HOURS)
-pool = ContainerPool()
+runtime = create_runtime(RUNTIME_MODE)
+pool = ContainerPool(runtime)
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 
 _MAX_LIST_LIMIT = 200

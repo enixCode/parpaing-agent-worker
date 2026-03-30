@@ -27,6 +27,12 @@ def _clamp_float(name: str, val: float, lo: float, hi: float) -> float:
         return clamped
     return val
 
+# Runtime mode: compose (local Docker) or swarm (multi-node Docker Swarm)
+# Runtime mode and shared volume for job data
+RUNTIME_MODE = os.environ.get("RUNTIME_MODE", "compose")
+JOBS_DIR = Path(os.environ.get("JOBS_DIR", "/parpaing-jobs"))
+JOBS_VOLUME = os.environ.get("JOBS_VOLUME", "parpaing-jobs")
+
 VERSION = "0.4.0"
 DEFAULT_MODEL = "claude-sonnet-4-6"
 WORKER_IMAGE = os.environ.get("WORKER_IMAGE", "agent-worker-worker")
