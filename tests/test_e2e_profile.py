@@ -29,7 +29,7 @@ def test_job_with_default_profile(client):
 
 
 def test_job_with_nonexistent_profile(client):
-    """A nonexistent profile should fail the job."""
+    """A nonexistent profile should be rejected at request time."""
     r = client.post("/jobs", json={
         "agent_id": "e2e-noprofile",
         "engine": "claude-code",
@@ -37,20 +37,7 @@ def test_job_with_nonexistent_profile(client):
         "prompt": "Say hello",
         "dry_run": True,
     })
-    assert r.status_code == 202
-    job_id = r.json()["job_id"]
-
-    # Poll - should fail with profile error
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        r = client.get(f"/jobs/{job_id}")
-        if r.json()["status"] in ("completed", "failed"):
-            break
-        time.sleep(2)
-
-    data = r.json()
-    assert data["status"] == "failed"
-    assert "Profile not found" in (data.get("error") or "")
+    assert r.status_code == 422
 
 
 def test_job_without_profile_uses_default(client):

@@ -235,9 +235,11 @@ agent-worker/
 │   ├── models.py          #   Request/response validation (Pydantic)
 │   ├── profiles.py        #   Profile loading and template rendering
 │   ├── engines.py         #   Engine loading and availability checks
+│   ├── metrics.py         #   Prometheus metrics (shared across modules)
 │   ├── store/             #   Persistence layer
 │   │   ├── jobs.py        #     PostgreSQL persistence with TTL cleanup
-│   │   └── pool.py        #     Warm container pool (DB-backed)
+│   │   ├── pool.py        #     Warm container pool (DB-backed)
+│   │   └── configs.py     #     Config store (profiles, engines, templates in DB)
 │   └── runner/            #   Execution layer
 │       ├── executor.py    #     Background job execution and webhook dispatch
 │       └── worker.py      #     Config injection and result extraction
@@ -252,7 +254,7 @@ agent-worker/
 ├── hooks/                 # Pre/post hook scripts
 ├── engines/               # Engine configs (TOML - one per AI tool)
 ├── db/                    # PostgreSQL schema
-├── tests/                 # Unit (7 files) and E2E tests (9 files)
+├── tests/                 # Unit (8 files) and E2E tests (9 files)
 ├── docs/                  # Documentation and assets
 ├── ui/                    # Web dashboard (single HTML file)
 ├── docker-compose.yml
@@ -274,7 +276,7 @@ TOWER_REPLICAS=3 docker compose up -d
 
 Items are roughly ordered by priority. Contributions are welcome.
 
-- [ ] **Profiles, prompts and hooks in DB** - manage profiles and templates via the API instead of TOML files on disk; enables dynamic configuration without container restarts
+- [x] **Profiles, prompts and hooks in DB** - manage profiles and templates via the API instead of TOML files on disk; enables dynamic configuration without container restarts
 
 - [ ] **Multi-tenant auth** - user accounts, organizations, quotas, and scoped API keys; foundation for running Parpaing as a shared service
 

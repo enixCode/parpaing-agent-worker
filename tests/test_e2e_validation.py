@@ -172,24 +172,24 @@ def test_max_budget_exact_max(client):
     assert r.status_code == 202
 
 
-def test_prompt_too_long(client):
-    """Prompt exceeding 100000 chars should return 422."""
+def test_prompt_large_accepted(client):
+    """Prompt limit is 100M - 100K chars should be accepted."""
     r = client.post("/jobs", json={
         "agent_id": "e2e-val",
         "engine": "claude-code",
         "prompt": "a" * 100_001,
         "dry_run": True,
     })
-    assert r.status_code == 422
+    assert r.status_code == 202
 
 
 def test_system_prompt_too_long(client):
-    """system_prompt exceeding 50000 chars should return 422."""
+    """system_prompt exceeding 500000 chars should return 422."""
     r = client.post("/jobs", json={
         "agent_id": "e2e-val",
         "engine": "claude-code",
         "prompt": "hello",
-        "system_prompt": "a" * 50_001,
+        "system_prompt": "a" * 500_001,
         "dry_run": True,
     })
     assert r.status_code == 422
