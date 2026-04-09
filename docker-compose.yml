@@ -17,6 +17,24 @@ services:
       timeout: 3s
       retries: 5
 
+  lb:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      tower:
+        condition: service_healthy
+    ports:
+      - "${TOWER_PORT:-8420}:80"
+    volumes:
+      - ./lb/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   tower:
     build:
       context: .
@@ -50,8 +68,6 @@ services:
       - ENGINES_DIR=/app/engines
       - UI_PATH=/app/ui/index.html
       - DATABASE_URL=postgresql://${POSTGRES_USER:-tower}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-tower}
-    ports:
-      - "${TOWER_PORT:-8420}:8420"
     networks:
       - agent-net
 

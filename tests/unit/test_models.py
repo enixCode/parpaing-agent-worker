@@ -49,9 +49,10 @@ class TestPromptValidation:
         r = AgentRunRequest(agent_id="t", engine="claude-code", prompt="hello")
         assert r.prompt == "hello"
 
-    def test_too_long(self):
-        with pytest.raises(ValueError):
-            AgentRunRequest(agent_id="t", engine="claude-code", prompt="x" * 100_001)
+    def test_large_prompt_accepted(self):
+        """Prompt limit is 100M - 100K chars should be accepted."""
+        r = AgentRunRequest(agent_id="t", engine="claude-code", prompt="x" * 100_001)
+        assert len(r.prompt) == 100_001
 
 
 class TestModelValidation:

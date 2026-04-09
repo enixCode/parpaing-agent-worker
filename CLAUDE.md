@@ -9,7 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 ```
-POST /jobs - Tower :TOWER_PORT - 202 {job_id} (immediate)
+POST /jobs - LB :TOWER_PORT - 202 {job_id} (immediate)
+       │
+       ▼
+  LB (nginx :80 - round-robin to Tower replicas)
        │
        ▼
   Tower (FastAPI :8420) x TOWER_REPLICAS:
@@ -144,6 +147,7 @@ Key directories (use `ls` for full listing):
 - `templates/` - Jinja2 templates: `prompts/` (.md.j2) and `claude-md/` (.md.j2)
 - `hooks/` - Worker hook scripts (optional, per-profile)
 - `db/` - PostgreSQL schema (init.sql: jobs + containers + configs tables)
+- `lb/` - Load balancer (nginx round-robin to Tower replicas)
 - `gateway/` - LLM Gateway (nginx reverse proxy, hides API keys)
 - `ui/` - Web dashboard (single HTML file)
 - `docs/` - Documentation (mkdocs)
@@ -241,7 +245,7 @@ run-job.sh (7 steps):
 
 ## Constants (config.py - single source of truth)
 
-- `VERSION = "0.3.0"`
+- `VERSION = "0.4.0"`
 - `DEFAULT_MODEL = "claude-sonnet-4-6"`
 
 ## Code Conventions
@@ -391,5 +395,6 @@ Always propagate changes across: code ↔ schema ↔ docs ↔ CLAUDE.md
 - **Config**: TOML (tomllib stdlib) + Jinja2
 - **DB**: PostgreSQL 17 (job persistence + container pool)
 - **Hooks**: Pre/post scripts injected into worker container (per-profile)
+- **LB**: nginx (round-robin to Tower replicas)
 - **Gateway**: nginx (LLM API proxy - hides API keys from workers)
-- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (Tower+DB+Gateway), `agent-workers` (shared worker network, internal)
+- **Infra**: Docker Compose, `pg-data` volume, `agent-net` (Tower+LB+DB+Gateway), `agent-workers` (shared worker network, internal)
